@@ -12,7 +12,7 @@ from formulaetl.models.pipeline import PipelineDefinition
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_talend_core_path_pipeline(work_dir: Path):
+def test_core_path_pipeline(work_dir: Path):
     # Ensure excel fixture is present in isolated work_dir
     xlsx_src = ROOT / "fixtures/sample/orders.xlsx"
     xlsx_dst = work_dir / "fixtures/sample/orders.xlsx"
@@ -20,7 +20,7 @@ def test_talend_core_path_pipeline(work_dir: Path):
     if not xlsx_dst.exists():
         xlsx_dst.write_bytes(xlsx_src.read_bytes())
 
-    pipeline_path = ROOT / "demos" / "talend-core-path" / "pipeline.json"
+    pipeline_path = ROOT / "demos" / "core-path" / "pipeline.json"
     data = json.loads(pipeline_path.read_text(encoding="utf-8"))
     pipeline = PipelineDefinition.model_validate(data)
 
