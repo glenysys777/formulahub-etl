@@ -1,4 +1,4 @@
-.PHONY: install seed test demo demo-api demo-excel demo-sftp demo-db demo-talend demo-python-row api web build docker-up docker-down lint
+.PHONY: install seed test demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks api web build docker-up docker-down lint
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -36,9 +36,9 @@ demo-db: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
 		python3 -m formulaetl.cli run demos/db-to-file/pipeline.json
 
-demo-talend: seed
+demo-core-path: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
-		python3 -m formulaetl.cli run demos/talend-core-path/pipeline.json
+		python3 -m formulaetl.cli run demos/core-path/pipeline.json
 
 demo-python-row: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \

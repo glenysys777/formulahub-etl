@@ -180,36 +180,55 @@ class DatabricksJob(BaseComponent):
         run_id = f"demo-{uuid.uuid4().hex[:10]}"
         job_id = str(self.config.get("job_id") or "0")
         host = str(self.config.get("workspace_host") or "demo")
+        # Shape mirrors Databricks Jobs API runs/get so flipping to live credentials is a config change,
+        # not a rewrite. Nested `state` matches api/2.1/jobs/runs/get.
         payload = {
             "mode": "demo",
             "workspace_host": host,
             "job_id": job_id,
             "run_id": run_id,
-            "state": "SUCCESS",
+            "number_in_job": 1,
+            "state": {
+                "life_cycle_state": "TERMINATED",
+                "result_state": "SUCCESS",
+                "state_message": "Demo run completed successfully",
+            },
+            # Flat aliases for older readers / metrics panels
             "life_cycle_state": "TERMINATED",
             "result_state": "SUCCESS",
             "notebook_params": notebook_params,
             "python_params": python_params,
             "rows_passed": len(rows),
+            "start_time": ts,
             "triggered_at": ts,
+            "run_page_url": f"{host.rstrip('/')}/#job/{job_id}/run/{run_id}",
             "note": (
-                "Demo mode — simulated Databricks Jobs API run. "
-                "Set FORMULAETL_DEMO=0 and provide workspace_host + token for live triggers."
+                "Demo mode — Jobs API–shaped sidecar (no real workspace call). "
+                "Set FORMULAETL_DEMO=0 and provide workspace_host + token for live /api/2.1/jobs/run-now."
             ),
         }
         out_path = out_dir / f"job_{job_id}_{ts}_{run_id}.json"
         out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         ctx.emit(
-            f"DatabricksJob [demo]: job_id={job_id} → SUCCESS "
-            f"(sidecar={out_path.name}, rows_in={len(rows)})"
+            f"DatabricksJob [demo]: job_id={job_id} run_id={run_id} → SUCCESS "
+            f"(sidecar={out_path.name}, rows_in={len(rows)}, "
+            f"life_cycle_state=TERMINATED, result_state=SUCCESS)"
         )
         return {
             "mode": "demo",
             "run_id": run_id,
             "job_id": job_id,
             "state": "SUCCESS",
+            "life_cycle_state": "TERMINATED",
+            "result_state": "SUCCESS",
             "sidecar": str(out_path),
             "rows_passed": len(rows),
+            "metrics": {
+                "rows_passed": len(rows),
+                "job_id": job_id,
+                "run_id": run_id,
+                "result_state": "SUCCESS",
+            },
         }
 
     def _run_live(

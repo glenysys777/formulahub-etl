@@ -35,8 +35,11 @@ def test_kafka_databricks_demo_pipeline(work_dir: Path):
     assert sidecars, "expected Databricks demo sidecar"
     meta = json.loads(sidecars[0].read_text(encoding="utf-8"))
     assert meta["mode"] == "demo"
-    assert meta["state"] == "SUCCESS"
+    assert meta["state"]["result_state"] == "SUCCESS"
+    assert meta["state"]["life_cycle_state"] == "TERMINATED"
     assert meta["rows_passed"] == 8
+    assert any("KafkaSource" in line for line in result.logs)
+    assert any("DatabricksJob" in line for line in result.logs)
 
 
 def test_s3_databricks_demo_pipeline(work_dir: Path):

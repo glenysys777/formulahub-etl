@@ -138,8 +138,17 @@ def test_schedule_api_put_get_and_tick(client: TestClient, tmp_path: Path):
 
     after = store.get("demo-api-kafka-databricks")
     assert after is not None
-    assert after.last_run_id or after.last_status
+    assert after.last_run_id, "due schedule must fire a real run"
+    assert after.last_status == "success"
     assert after.next_run_at and after.next_run_at > 1.0
+
+    # Run history must be queryable (not a UI-only stub)
+    run = client.get(f"/api/runs/{after.last_run_id}")
+    assert run.status_code == 200
+    body = run.json()
+    assert body["status"] == "success"
+    assert body["pipeline_id"] == "demo-api-kafka-databricks"
+    assert body.get("logs")
 
 
 def test_list_components_includes_kafka_databricks(client: TestClient):

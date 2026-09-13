@@ -88,8 +88,14 @@ def test_databricks_job_demo(work_dir: Path):
     meta = json.loads(sidecar.read_text(encoding="utf-8"))
     assert meta["job_id"] == "1001"
     assert meta["result_state"] == "SUCCESS"
+    assert isinstance(meta["state"], dict)
+    assert meta["state"]["life_cycle_state"] == "TERMINATED"
+    assert meta["state"]["result_state"] == "SUCCESS"
+    assert meta["run_id"]
     assert meta["notebook_params"]["source"] == "test"
     assert meta["notebook_params"]["row_count"] == "2"
+    assert result.side_effects["life_cycle_state"] == "TERMINATED"
+    assert result.side_effects["result_state"] == "SUCCESS"
 
 
 def test_databricks_job_demo_without_token(work_dir: Path):

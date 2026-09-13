@@ -357,8 +357,53 @@ select {
   position: relative;
   min-height: 0;
   border-right: 1px solid var(--border);
-  background: var(--bg-0);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0, 113, 227, 0.06), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(255, 55, 95, 0.04), transparent 50%),
+    var(--bg-0);
   transition: background 0.35s ease;
+}
+
+.canvas-wrap.is-running {
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 0%, rgba(0, 113, 227, 0.1), transparent 55%),
+    var(--bg-0);
+}
+
+.palette-item {
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.palette-item:hover:not(:disabled) {
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.palette-item:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.etl-node {
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.etl-node.selected {
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.35), var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.etl-node.run-running {
+  animation: node-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes node-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 113, 227, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(0, 113, 227, 0);
+  }
 }
 
 .ai-bar {
