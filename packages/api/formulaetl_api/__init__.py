@@ -1,0 +1,270 @@
+"""FormulaETL FastAPI application."""
+
+from __future__ import annotations
+
+import os
+import threading
+import uuid
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from formulaetl.engine.runner import PipelineRunner, RunResult
+from formulaetl.models.pipeline import PipelineDefinition
+from formulaetl.sdk.registry import list_components
+from formulaetl_api.ai_builder import build_pipeline_from_text
+from formulaetl_api.store import PipelineStore, RunStore
+
+WORK_DIR = Path(os.environ.get("FORMULAETL_WORK_DIR", Path(__file__).resolve().parents[2]))
+DEMO_MODE = os.environ.get("FORMULAETL_DEMO", "1") == "1"
+
+app = FastAPI(
+    title="FormulaETL API",
+    description="Open-source visual ETL — pipeline CRUD, run, logs, AI builder",
+    version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+pipelines = PipelineStore(WORK_DIR / "data" / "pipelines")
+runs = RunStore()
+_runner_lock = threading.Lock()
+
+
+class PipelineCreate(BaseModel):
+    name: str
+    description: str = ""
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    edges: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    id: str | None = None
+
+
+class AIBuildRequest(BaseModel):
+    description: str
+    name: str | None = None
+
+
+class SchemaDiscoverRequest(BaseModel):
+    component_type: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunResponse(BaseModel):
+    run_id: str
+    status: str
+
+
+def _ensure_demo_loaded(*, refresh: bool = False) -> None:
+    """Load bundled demos from demos/*.json. With refresh=True, overwrite store (startup)."""
+    import json
+
+    for rel, pid in (
+        ("demos/s3-pgp-snowflake/pipeline.json", "demo-s3-pgp-snowflake"),
+        ("demos/api-map-transform/pipeline.json", "demo-api-map-transform"),
+        ("demos/excel-to-file/pipeline.json", "demo-excel-to-file"),
+        ("demos/sftp-excel-to-file/pipeline.json", "demo-sftp-excel-to-file"),
+        ("demos/excel-sftp/pipeline.json", "demo-excel-sftp"),
+        ("demos/db-to-file/pipeline.json", "demo-db-to-file"),
+        ("demos/core-path/pipeline.json", "demo-core-path"),
+        ("demos/python-row-flex/pipeline.json", "demo-python-row-flex"),
+    ):
+        demo_path = WORK_DIR / rel
+        if not demo_path.exists():
+            continue
+        if not refresh and pipelines.get(pid) is not None:
+            continue
+        data = json.loads(demo_path.read_text(encoding="utf-8"))
+        data["id"] = pid
+        pipelines.save(PipelineDefinition.model_validate(data))
+
+
+@app.on_event("startup")
+def startup() -> None:
+    pipelines.ensure()
+    _ensure_demo_loaded(refresh=True)
+    # Drop legacy demo id so product UI never lists Talend-named pipelines
+    pipelines.delete("demo-talend-core-path")
+
+
+@app.get("/health")
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "demo_mode": DEMO_MODE,
+        "version": "0.1.0",
+        "work_dir": str(WORK_DIR),
+    }
+
+
+@app.get("/api/components")
+def api_components() -> list[dict[str, Any]]:
+    return list_components()
+
+
+@app.post("/api/schema/discover")
+def schema_discover(body: SchemaDiscoverRequest) -> dict[str, Any]:
+    """Infer columns + types from a source connection/sample (Talend-like schema)."""
+    from formulaetl.schema.discover import discover
+
+    try:
+        return discover(
+            body.component_type,
+            body.config,
+            work_dir=WORK_DIR,
+            demo_mode=DEMO_MODE,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, f"Schema discovery failed: {exc}") from exc
+
+
+
+@app.get("/api/pipelines")
+def list_pipelines() -> list[dict[str, Any]]:
+    _ensure_demo_loaded()
+    return [p.model_dump() for p in pipelines.list()]
+
+
+@app.post("/api/pipelines", status_code=201)
+def create_pipeline(body: PipelineCreate) -> dict[str, Any]:
+    pid = body.id or str(uuid.uuid4())
+    pipeline = PipelineDefinition(
+        id=pid,
+        name=body.name,
+        description=body.description,
+        nodes=body.nodes,
+        edges=body.edges,
+        metadata=body.metadata,
+    )
+    pipelines.save(pipeline)
+    return pipeline.model_dump()
+
+
+@app.get("/api/pipelines/{pipeline_id}")
+def get_pipeline(pipeline_id: str) -> dict[str, Any]:
+    _ensure_demo_loaded()
+    p = pipelines.get(pipeline_id)
+    if not p:
+        raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+    return p.model_dump()
+
+
+@app.put("/api/pipelines/{pipeline_id}")
+def update_pipeline(pipeline_id: str, body: PipelineCreate) -> dict[str, Any]:
+    pipeline = PipelineDefinition(
+        id=pipeline_id,
+        name=body.name,
+        description=body.description,
+        nodes=body.nodes,
+        edges=body.edges,
+        metadata=body.metadata,
+    )
+    pipelines.save(pipeline)
+    return pipeline.model_dump()
+
+
+@app.delete("/api/pipelines/{pipeline_id}")
+def delete_pipeline(pipeline_id: str) -> dict[str, str]:
+    if not pipelines.delete(pipeline_id):
+        raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+    return {"status": "deleted", "id": pipeline_id}
+
+
+def _execute_run(run_id: str, pipeline: PipelineDefinition) -> None:
+    runner = PipelineRunner(work_dir=WORK_DIR, demo_mode=DEMO_MODE)
+    result = runner.run(pipeline, run_id=run_id)
+    runs.update(result)
+
+
+@app.post("/api/pipelines/{pipeline_id}/run", response_model=RunResponse)
+def run_pipeline(pipeline_id: str) -> RunResponse:
+    p = pipelines.get(pipeline_id)
+    if not p:
+        # try reload demo
+        _ensure_demo_loaded()
+        p = pipelines.get(pipeline_id)
+    if not p:
+        raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+
+    # Restore demo encrypted object if a previous archive step moved it
+    if DEMO_MODE:
+        enc = WORK_DIR / "data" / "s3" / "demo" / "orders_encrypted.csv.pgp"
+        if not enc.exists():
+            try:
+                import sys
+
+                sys.path.insert(0, str(WORK_DIR))
+                from scripts.seed_demo import main as seed_main
+
+                seed_main()
+            except Exception as exc:
+                raise HTTPException(500, f"Failed to restore demo fixtures: {exc}") from exc
+
+    run_id = str(uuid.uuid4())
+    pending = RunResult(
+        run_id=run_id,
+        pipeline_id=pipeline_id,
+        status="running",
+        logs=[f"Queued run for pipeline '{p.name}'"],
+    )
+    runs.put(pending)
+
+    # For demo/MVP reliability: run synchronously under lock so poll gets final status.
+    # Still returns run_id first-style via the stored result.
+    with _runner_lock:
+        _execute_run(run_id, p)
+
+    final = runs.get(run_id)
+    return RunResponse(run_id=run_id, status=final.status if final else "unknown")
+
+
+@app.get("/api/runs/{run_id}")
+def get_run(run_id: str) -> dict[str, Any]:
+    r = runs.get(run_id)
+    if not r:
+        raise HTTPException(404, f"Run '{run_id}' not found")
+    return {
+        "run_id": r.run_id,
+        "pipeline_id": r.pipeline_id,
+        "status": r.status,
+        "metrics": r.metrics,
+        "node_metrics": r.node_metrics,
+        "logs": r.logs,
+        "error": r.error,
+        "outputs": r.outputs,
+        "duration_ms": r.duration_ms,
+    }
+
+
+@app.post("/api/ai/build")
+def ai_build(body: AIBuildRequest) -> dict[str, Any]:
+    pipeline = build_pipeline_from_text(body.description, name=body.name)
+    pipelines.save(pipeline)
+    return pipeline.model_dump()
+
+
+@app.get("/api/runs")
+def list_runs() -> list[dict[str, Any]]:
+    return [
+        {
+            "run_id": r.run_id,
+            "pipeline_id": r.pipeline_id,
+            "status": r.status,
+            "metrics": r.metrics,
+            "duration_ms": r.duration_ms,
+        }
+        for r in runs.list()
+    ]

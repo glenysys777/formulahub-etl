@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<orders>
+  <order id="4001">
+    <customer_name>XML Customer 1</customer_name>
+    <email>xml1@example.com</email>
+    <product_sku>SKU-X1</product_sku>
+    <quantity>2</quantity>
+    <amount>25.50</amount>
+    <status>shipped</status>
+  </order>
+  <order id="4002">
+    <customer_name>XML Customer 2</customer_name>
+    <email>xml2@example.com</email>
+    <product_sku>SKU-X2</product_sku>
+    <quantity>1</quantity>
+    <amount>10.00</amount>
+    <status>pending</status>
+  </order>
+  <order id="4003">
+    <customer_name>XML Customer 3</customer_name>
+    <email>xml3@example.com</email>
+    <product_sku>SKU-X3</product_sku>
+    <quantity>5</quantity>
+    <amount>99.99</amount>
+    <status>shipped</status>
+  </order>
+</orders>

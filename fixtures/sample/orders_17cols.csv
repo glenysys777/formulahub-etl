@@ -1,0 +1,14 @@
+order_id,customer_id,customer_name,email,phone,country,city,product_sku,product_name,quantity,unit_price,currency,order_date,ship_date,status,channel,notes
+1001,201,Customer 1,customer1@example.com,+1-555-01001,US,Austin,SKU-0001,Widget 1,1,10.99,USD,01/16/2024,2024-01-19,shipped,web,order note 1
+1002,202,Customer 2,customer2@example.com,+1-555-01002,CA,Toronto,SKU-0002,Widget 2,2,11.99,USD,2024-01-17,2024-01-20,shipped,web,order note 2
+1003,203,Customer 3,customer3@example.com,+1-555-01003,US,Austin,SKU-0003,Widget 3,3,12.99,USD,01/18/2024,2024-01-21,shipped,partner,order note 3
+1004,204,Customer 4,customer4@example.com,+1-555-01004,CA,Toronto,SKU-0004,Widget 4,4,13.99,USD,2024-01-19,2024-01-22,shipped,web,order note 4
+1005,205,Customer 5,customer5@example.com,+1-555-01005,US,Austin,SKU-0005,Widget 5,5,14.99,USD,01/20/2024,2024-01-23,shipped,web,order note 5
+1006,206,Customer 6,customer6@example.com,+1-555-01006,CA,Toronto,SKU-0006,Widget 6,6,15.99,USD,2024-01-21,2024-01-24,shipped,partner,order note 6
+1007,207,Customer 7,customer7@example.com,+1-555-01007,US,Austin,SKU-0007,Widget 7,7,16.99,USD,01/22/2024,2024-01-25,shipped,web,order note 7
+1008,208,Customer 8,customer8@example.com,+1-555-01008,CA,Toronto,SKU-0008,Widget 8,8,17.99,USD,2024-01-23,2024-01-26,pending,web,order note 8
+1009,209,Customer 9,customer9@example.com,+1-555-01009,US,Austin,SKU-0009,Widget 9,9,18.99,USD,01/24/2024,2024-01-27,pending,partner,order note 9
+1010,210,Customer 10,customer10@example.com,+1-555-01010,CA,Toronto,SKU-0010,Widget 10,10,19.99,USD,2024-01-25,2024-01-28,pending,web,order note 10
+9991,301,Bad Email Co,not-an-email,+1-555-9999,US,Nowhere,SKU-BAD1,Broken Widget,abc,12.50,USD,2024-02-01,2024-02-05,pending,web,invalid email and quantity
+9992,302,Missing Fields,,+1-555-8888,US,Emptyville,SKU-BAD2,Ghost Widget,2,NaN,USD,02/30/2024,2024-03-01,cancelled,web,"missing email, bad price/date"
+ORD-X,xxx,Type Chaos,chaos@example.com,n/a,XX,Null Island,,,-1,0,ZZZ,yesterday,tomorrow,???,,many type failures

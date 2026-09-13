@@ -1,0 +1,86 @@
+{
+  "id": "demo-sftp-excel-to-file",
+  "name": "SFTP → Excel → Map → File (+ SFTP mock out)",
+  "description": "Demo mocks SFTP download from fixtures/sample/orders.xlsx into staging, parses Excel, maps columns, writes CSV. Optional SFTP destination writes to data/out/sftp_mock/ (not a real SFTP server).",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "sftp",
+      "type": "sftp_source",
+      "label": "SFTP Source (demo)",
+      "config": {
+        "host": "demo",
+        "port": 22,
+        "username": "demo",
+        "remote_path": "/incoming/orders.xlsx",
+        "local_staging_path": "data/out/sftp_staging/orders.xlsx"
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "excel",
+      "type": "excel_source",
+      "label": "Excel Source",
+      "config": {
+        "path": "data/out/sftp_staging/orders.xlsx",
+        "sheet_name": "Orders",
+        "has_header": true
+      },
+      "position": { "x": 260, "y": 180 }
+    },
+    {
+      "id": "map",
+      "type": "column_map",
+      "label": "Column Map",
+      "config": {
+        "mappings": [
+          "Order ID:order_id",
+          "Customer ID:customer_id",
+          "Customer Name:customer_name",
+          "Email:email",
+          "Product SKU:product_sku",
+          "Qty:quantity",
+          "Amount:amount",
+          "Order Date:order_date",
+          "Status:status"
+        ],
+        "drop_unmapped": false
+      },
+      "position": { "x": 480, "y": 180 }
+    },
+    {
+      "id": "dest",
+      "type": "local_file_destination",
+      "label": "Local CSV",
+      "config": {
+        "path": "data/out/sftp_excel_orders.csv",
+        "format": "csv"
+      },
+      "position": { "x": 700, "y": 80 }
+    },
+    {
+      "id": "sftp_out",
+      "type": "sftp_destination",
+      "label": "SFTP Dest (demo mock)",
+      "config": {
+        "host": "demo",
+        "username": "demo",
+        "remote_path": "/outgoing/sftp_excel_orders.csv",
+        "local_path": "data/out/sftp_excel_orders.csv"
+      },
+      "position": { "x": 700, "y": 280 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "sftp", "target": "excel" },
+    { "id": "e2", "source": "excel", "target": "map" },
+    { "id": "e3", "source": "map", "target": "dest" },
+    { "id": "e4", "source": "dest", "target": "sftp_out" }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "sftp-excel-to-file",
+    "honesty": "FORMULAETL_DEMO=1 copies fixtures; real SFTP needs host/creds and FORMULAETL_DEMO=0"
+  }
+}

@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    environment:
+      FORMULAETL_DEMO: "1"
+      FORMULAETL_WORK_DIR: /app
+    ports:
+      - "18765:18765"
+    volumes:
+      - ./data:/app/data
+      - ./fixtures:/app/fixtures
+      - ./demos:/app/demos
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18765/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: http://127.0.0.1:18765
+    ports:
+      - "18766:80"
+    depends_on:
+      api:
+        condition: service_healthy

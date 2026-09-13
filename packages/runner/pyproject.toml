@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "formulaetl"
+version = "0.1.0"
+description = "FormulaETL — open-source visual ETL runtime and component SDK"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [{ name = "FormulaETL Contributors" }]
+dependencies = [
+  "pydantic>=2.0",
+  "pyyaml>=6.0",
+  "pgpy>=0.6.0",
+  "boto3>=1.34",
+  "httpx>=0.27",
+  "openpyxl>=3.1",
+  "pandas>=2.0",
+  "paramiko>=3.0",
+  "psycopg[binary]>=3.1",
+]
+
+[project.optional-dependencies]
+snowflake = ["snowflake-connector-python>=3.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+formulaetl = "formulaetl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["formulaetl*"]
+
+[tool.pytest.ini_options]
+testpaths = ["../../tests"]
+pythonpath = [".", "../api"]

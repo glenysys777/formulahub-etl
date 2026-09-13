@@ -1,0 +1,91 @@
+{
+  "id": "demo-python-row-flex",
+  "name": "API → Field Map → Python Row → CSV",
+  "description": "REST/API sample → map columns → Python row script (sandboxed) → CSV. Custom row logic without Java.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "api",
+      "type": "http_api_source",
+      "label": "HTTP API Source",
+      "config": {
+        "url": "https://api.example.com/v1/orders",
+        "method": "GET",
+        "json_path": "data.items",
+        "demo": true
+      },
+      "position": {
+        "x": 40,
+        "y": 180
+      }
+    },
+    {
+      "id": "map",
+      "type": "column_map",
+      "label": "Column Map",
+      "config": {
+        "mappings": [
+          "orderId:order_id",
+          "customerName:customer_name",
+          "amt:amount",
+          "qty:quantity"
+        ],
+        "drop_unmapped": false
+      },
+      "position": {
+        "x": 260,
+        "y": 180
+      }
+    },
+    {
+      "id": "py",
+      "type": "python_row",
+      "label": "Python Row",
+      "config": {
+        "mode": "row",
+        "input_var": "row",
+        "code": "row['amount'] = float(row.get('amount') or 0)\nrow['quantity'] = int(float(row.get('quantity') or 0))\nrow['line_total'] = row['amount'] * row['quantity']\nrow['tax'] = round(row['line_total'] * 0.08, 2)\nrow['needs_review'] = row['line_total'] > 100"
+      },
+      "position": {
+        "x": 480,
+        "y": 180
+      }
+    },
+    {
+      "id": "dest",
+      "type": "local_file_destination",
+      "label": "Local CSV",
+      "config": {
+        "path": "data/out/python_row_flex.csv",
+        "format": "csv"
+      },
+      "position": {
+        "x": 700,
+        "y": 180
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "api",
+      "target": "map"
+    },
+    {
+      "id": "e2",
+      "source": "map",
+      "target": "py"
+    },
+    {
+      "id": "e3",
+      "source": "py",
+      "target": "dest"
+    }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "python-row-flex",
+    "java_to_python_note": true
+  }
+}

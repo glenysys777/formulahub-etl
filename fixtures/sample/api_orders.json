@@ -1,0 +1,19 @@
+{
+  "data": {
+    "items": [
+      {"orderId": 2001, "customerId": 301, "customerName": "Acme Corp", "email": "ops@acme.example.com", "productSku": "SKU-A01", "qty": 2, "amt": 45.5, "order_date": "03/01/2024", "status": "shipped", "currency": "USD", "channel": "api"},
+      {"orderId": 2002, "customerId": 302, "customerName": "Beta LLC", "email": "buy@beta.example.com", "productSku": "SKU-B02", "qty": 1, "amt": 19.99, "order_date": "2024-03-02", "status": "pending", "currency": "USD", "channel": "api"},
+      {"orderId": 2003, "customerId": 303, "customerName": "Gamma Inc", "email": "orders@gamma.example.com", "productSku": "SKU-C03", "qty": 5, "amt": 120.0, "order_date": "03/03/2024", "status": "shipped", "currency": "EUR", "channel": "partner"},
+      {"orderId": 2004, "customerId": 304, "customerName": "Delta Co", "email": "ap@delta.example.com", "productSku": "SKU-D04", "qty": 3, "amt": 67.25, "order_date": "2024-03-04", "status": "shipped", "currency": "USD", "channel": "web"},
+      {"orderId": 2005, "customerId": 305, "customerName": "Echo Ltd", "email": "finance@echo.example.com", "productSku": "SKU-E05", "qty": 8, "amt": 210.4, "order_date": "03/05/2024", "status": "cancelled", "currency": "GBP", "channel": "api"},
+      {"orderId": 2006, "customerId": 306, "customerName": "Foxtrot SA", "email": "po@foxtrot.example.com", "productSku": "SKU-F06", "qty": 1, "amt": 9.5, "order_date": "2024-03-06", "status": "shipped", "currency": "EUR", "channel": "api"},
+      {"orderId": 2007, "customerId": 307, "customerName": "Golf GmbH", "email": "einkauf@golf.example.com", "productSku": "SKU-G07", "qty": 4, "amt": 88.0, "order_date": "03/07/2024", "status": "pending", "currency": "EUR", "channel": "partner"},
+      {"orderId": 2008, "customerId": 308, "customerName": "Hotel Group", "email": "procurement@hotel.example.com", "productSku": "SKU-H08", "qty": 10, "amt": 499.99, "order_date": "2024-03-08", "status": "shipped", "currency": "USD", "channel": "web"},
+      {"orderId": 2009, "customerId": 309, "customerName": "India Traders", "email": "desk@india.example.com", "productSku": "SKU-I09", "qty": 2, "amt": 33.33, "order_date": "03/09/2024", "status": "shipped", "currency": "INR", "channel": "api"},
+      {"orderId": 2010, "customerId": 310, "customerName": "Juliet Labs", "email": "lab@juliet.example.com", "productSku": "SKU-J10", "qty": 6, "amt": 150.75, "order_date": "2024-03-10", "status": "shipped", "currency": "USD", "channel": "api"},
+      {"orderId": 2011, "customerId": 311, "customerName": "Kilo Retail", "email": "store@kilo.example.com", "productSku": "SKU-K11", "qty": 7, "amt": 77.7, "order_date": "03/11/2024", "status": "pending", "currency": "USD", "channel": "web"},
+      {"orderId": 2012, "customerId": 312, "customerName": "Lima Foods", "email": "supply@lima.example.com", "productSku": "SKU-L12", "qty": 12, "amt": 360.0, "order_date": "2024-03-12", "status": "shipped", "currency": "USD", "channel": "partner"}
+    ]
+  },
+  "meta": {"page": 1, "total": 12}
+}

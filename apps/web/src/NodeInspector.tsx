@@ -1,0 +1,302 @@
+import { useMemo, useState } from "react";
+import type { ComponentInfo, ParamDef } from "./api";
+
+function friendlyNodeId(nodeId: string, componentType: string, _label?: string): string {
+  const raw = (nodeId || "").trim();
+  const lower = raw.toLowerCase();
+  if (lower === "tmap" || lower.includes("tmap")) return "field_mapper";
+  if (componentType === "tmap") return "field_mapper";
+  return raw;
+}
+
+function friendlyTypeLabel(componentType: string, label?: string, displayName?: string): string {
+  if (displayName) return displayName;
+  if (componentType === "tmap") return "Field Mapper";
+  if (componentType === "column_map") return "Schema Map";
+  return label || componentType;
+}
+
+
+type Props = {
+  nodeId: string;
+  componentType: string;
+  label: string;
+  config: Record<string, unknown>;
+  component?: ComponentInfo;
+  onChange: (key: string, value: unknown) => void;
+  onConfigReplace: (config: Record<string, unknown>) => void;
+};
+
+function isEmpty(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string" && value.trim() === "") return true;
+  if (Array.isArray(value) && value.length === 0) return true;
+  return false;
+}
+
+function displayValue(param: ParamDef, config: Record<string, unknown>): string | number | boolean {
+  const raw = config[param.key];
+  if (raw === undefined || raw === null) {
+    if (param.default !== undefined && param.default !== null) {
+      return param.default as string | number | boolean;
+    }
+    if (param.type === "boolean") return false;
+    if (param.type === "number") return "";
+    if (param.type === "string_list") return "";
+    return "";
+  }
+  if (param.type === "string_list") {
+    if (Array.isArray(raw)) return raw.map(String).join("\n");
+    return String(raw);
+  }
+  if (param.type === "string" && (typeof raw === "object")) {
+    try {
+      return JSON.stringify(raw, null, 2);
+    } catch {
+      return String(raw);
+    }
+  }
+  if (param.type === "boolean") return Boolean(raw);
+  if (param.type === "number") return typeof raw === "number" ? raw : Number(raw);
+  return String(raw);
+}
+
+function parseFieldValue(param: ParamDef, input: string | boolean, previous: unknown): unknown {
+  if (param.type === "boolean") return Boolean(input);
+  if (param.type === "number") {
+    const s = String(input).trim();
+    if (s === "") return undefined;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : previous;
+  }
+  if (param.type === "string_list") {
+    const s = String(input);
+    const parts = s
+      .split(/[\n,]+/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return parts;
+  }
+  if (param.type === "string") {
+    const s = String(input);
+    // If previous value was object/array, try to keep JSON semantics
+    if (previous !== undefined && typeof previous === "object") {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return s;
+      }
+    }
+    // Heuristic: looks like JSON object/array
+    const trimmed = s.trim();
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return s;
+      }
+    }
+    return s;
+  }
+  return String(input);
+}
+
+
+
+export function missingRequiredKeys(
+  config: Record<string, unknown>,
+  parameters: ParamDef[],
+): string[] {
+  return parameters
+    .filter((p) => p.required)
+    .filter((p) => {
+      const v = config[p.key];
+      if (!isEmpty(v)) return false;
+      // default satisfies required for run-time fill, but UI still hints if unset in config
+      return isEmpty(p.default);
+    })
+    .map((p) => p.key);
+}
+
+export function NodeInspector({
+  nodeId,
+  componentType,
+  label,
+  config,
+  component,
+  onChange,
+  onConfigReplace,
+}: Props) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [jsonDraft, setJsonDraft] = useState("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  const parameters = component?.parameters || [];
+  const missing = useMemo(
+    () => missingRequiredKeys(config, parameters),
+    [config, parameters],
+  );
+
+  const openAdvanced = () => {
+    setJsonDraft(JSON.stringify(config ?? {}, null, 2));
+    setJsonError(null);
+    setAdvancedOpen((v) => !v);
+  };
+
+  const applyJson = () => {
+    try {
+      const parsed = JSON.parse(jsonDraft);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        setJsonError("Config must be a JSON object");
+        return;
+      }
+      onConfigReplace(parsed as Record<string, unknown>);
+      setJsonError(null);
+    } catch (e) {
+      setJsonError(e instanceof Error ? e.message : "Invalid JSON");
+    }
+  };
+
+  const typeLabel = friendlyTypeLabel(componentType, label, component?.display_name);
+
+  return (
+    <div className="inspector">
+      <div className="inspector-meta">
+        <div className="field">
+          <label>Node</label>
+          <input value={label || typeLabel} readOnly />
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label>Id</label>
+            <input value={friendlyNodeId(nodeId, componentType, label)} readOnly />
+          </div>
+          <div className="field">
+            <label>Type</label>
+            <input value={typeLabel} readOnly data-testid="inspector-type" />
+          </div>
+        </div>
+      </div>
+
+      {missing.length > 0 && (
+        <div className="inspector-warn" data-testid="missing-params">
+          Missing required: {missing.join(", ")}
+        </div>
+      )}
+
+      <div className="inspector-fields">
+        {parameters.length === 0 ? (
+          <p className="empty-hint">No parameter schema for this component.</p>
+        ) : (
+          parameters.map((param) => {
+            const requiredMissing = missing.includes(param.key);
+            const value = displayValue(param, config);
+            const fieldClass = `field${requiredMissing ? " field-missing" : ""}`;
+
+            if (param.type === "boolean") {
+              return (
+                <div className={fieldClass} key={param.key}>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(value)}
+                      onChange={(e) => onChange(param.key, e.target.checked)}
+                    />
+                    <span>
+                      {param.label}
+                      {param.required ? " *" : ""}
+                    </span>
+                  </label>
+                  {param.help ? <div className="field-help">{param.help}</div> : null}
+                </div>
+              );
+            }
+
+            if (param.type === "select") {
+              return (
+                <div className={fieldClass} key={param.key}>
+                  <label>
+                    {param.label}
+                    {param.required ? " *" : ""}
+                  </label>
+                  <select
+                    value={String(value)}
+                    onChange={(e) => onChange(param.key, e.target.value)}
+                  >
+                    {(param.options || []).map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                  {param.help ? <div className="field-help">{param.help}</div> : null}
+                </div>
+              );
+            }
+
+            if (param.type === "string_list" || (param.type === "string" && typeof config[param.key] === "object")) {
+              return (
+                <div className={fieldClass} key={param.key}>
+                  <label>
+                    {param.label}
+                    {param.required ? " *" : ""}
+                  </label>
+                  <textarea
+                    rows={param.type === "string_list" ? 3 : 5}
+                    value={String(value)}
+                    placeholder={param.type === "string_list" ? "one per line" : undefined}
+                    onChange={(e) =>
+                      onChange(param.key, parseFieldValue(param, e.target.value, config[param.key]))
+                    }
+                  />
+                  {param.help ? <div className="field-help">{param.help}</div> : null}
+                </div>
+              );
+            }
+
+            return (
+              <div className={fieldClass} key={param.key}>
+                <label>
+                  {param.label}
+                  {param.required ? " *" : ""}
+                </label>
+                <input
+                  type={param.type === "secret" ? "password" : param.type === "number" ? "number" : "text"}
+                  value={value === undefined || value === null ? "" : String(value)}
+                  onChange={(e) =>
+                    onChange(param.key, parseFieldValue(param, e.target.value, config[param.key]))
+                  }
+                />
+                {param.help ? <div className="field-help">{param.help}</div> : null}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="inspector-advanced">
+        <button type="button" className="btn-link" onClick={openAdvanced}>
+          {advancedOpen ? "▾ Advanced (raw JSON)" : "▸ Advanced (raw JSON)"}
+        </button>
+        {advancedOpen && (
+          <div className="advanced-panel">
+            <textarea
+              className="json-editor"
+              rows={8}
+              value={jsonDraft}
+              onChange={(e) => setJsonDraft(e.target.value)}
+              spellCheck={false}
+            />
+            {jsonError && <div className="field-error">{jsonError}</div>}
+            <button type="button" className="btn btn-sm" onClick={applyJson}>
+              Apply JSON
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

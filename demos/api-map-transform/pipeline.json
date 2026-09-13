@@ -1,0 +1,113 @@
+{
+  "id": "demo-api-map-transform",
+  "name": "API → Map → Transform → File",
+  "description": "Client use case: pull JSON orders from an HTTP/REST API (demo fixture), rename mixed API fields with Column Map, cast dates, validate schema, write CSV locally (Snowflake-ready shape).",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "api",
+      "type": "http_api_source",
+      "label": "HTTP API Source",
+      "config": {
+        "url": "https://api.example.com/v1/orders",
+        "method": "GET",
+        "json_path": "data.items",
+        "timeout_sec": 30,
+        "demo": true
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "map",
+      "type": "column_map",
+      "label": "Column Map",
+      "config": {
+        "mappings": [
+          "orderId:order_id",
+          "customerId:customer_id",
+          "customerName:customer_name",
+          "productSku:product_sku",
+          "qty:quantity",
+          "amt:amount"
+        ],
+        "drop_unmapped": false
+      },
+      "position": { "x": 260, "y": 180 }
+    },
+    {
+      "id": "transform",
+      "type": "transform",
+      "label": "Transform Dates",
+      "config": {
+        "cast": {
+          "order_date": {
+            "type": "date",
+            "input_format": "%m/%d/%Y",
+            "output_format": "%Y-%m-%d"
+          },
+          "quantity": "int",
+          "amount": "float",
+          "order_id": "int",
+          "customer_id": "int"
+        },
+        "add_constants": {
+          "loaded_by": "formulaetl"
+        }
+      },
+      "position": { "x": 480, "y": 180 }
+    },
+    {
+      "id": "validate",
+      "type": "schema_validate",
+      "label": "Schema Validate",
+      "config": {
+        "columns": {
+          "order_id": "int",
+          "customer_id": "int",
+          "customer_name": "string",
+          "email": "email",
+          "product_sku": "string",
+          "quantity": "int",
+          "amount": "float",
+          "order_date": "date",
+          "status": "string",
+          "currency": "string",
+          "channel": "string"
+        },
+        "required_columns": [
+          "order_id",
+          "customer_id",
+          "customer_name",
+          "email",
+          "product_sku",
+          "quantity",
+          "amount",
+          "order_date",
+          "status"
+        ]
+      },
+      "position": { "x": 700, "y": 180 }
+    },
+    {
+      "id": "dest",
+      "type": "local_file_destination",
+      "label": "Local CSV",
+      "config": {
+        "path": "data/out/api_orders.csv",
+        "format": "csv"
+      },
+      "position": { "x": 920, "y": 180 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "api", "target": "map" },
+    { "id": "e2", "source": "map", "target": "transform" },
+    { "id": "e3", "source": "transform", "target": "validate" },
+    { "id": "e4", "source": "validate", "target": "dest", "sourceHandle": "out" }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "api-map-transform"
+  }
+}
