@@ -79,6 +79,14 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 
 ---
 
+## Component palette — primary non-AI path (now)
+
+The left **Components** palette lists every registered type from `GET /api/components`, grouped by category, with original colorful SVG icons and clear labels (no vendor trademark logos).
+
+- **Drag** a component onto the React Flow canvas, or **click** to add it with sensible defaults
+- **New blank** starts an empty pipeline so users can build API → map → transform → load without AI Build or Load demo
+- AI Build and Load demo remain shortcuts; the palette is the main manual path
+
 ## Visual Field Mapper — MVP (now)
 
 What data engineers expect when mapping columns:

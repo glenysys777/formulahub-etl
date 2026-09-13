@@ -237,7 +237,22 @@ select {
 .palette-list {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.55rem;
+}
+
+.palette-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.palette-group-label {
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.15rem 0.35rem 0.05rem;
 }
 
 .palette-item {

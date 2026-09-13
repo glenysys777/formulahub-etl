@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
@@ -10,6 +11,7 @@ import {
   type NodeTypes,
   useEdgesState,
   useNodesState,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -98,6 +100,35 @@ function defaultConfigFor(type: string): Record<string, unknown> {
   return {};
 }
 
+
+const CATEGORY_GROUP_ORDER = [
+  "source",
+  "stream",
+  "file",
+  "db",
+  "transform",
+  "quality",
+  "security",
+  "orch",
+  "destination",
+  "utility",
+] as const;
+
+const CATEGORY_GROUP_LABELS: Record<string, string> = {
+  source: "Sources",
+  stream: "Streams",
+  file: "Files",
+  db: "Databases",
+  transform: "Transform",
+  quality: "Quality",
+  security: "Security",
+  orch: "Orchestration",
+  destination: "Destinations",
+  utility: "Utility",
+};
+
+const DND_MIME = "application/formulaetl-component";
+
 const nodeTypes: NodeTypes = { etl: EtlNode };
 
 function toFlow(
@@ -185,7 +216,7 @@ function fromFlow(pipeline: Pipeline, nodes: Node[], edges: Edge[]): Pipeline {
   };
 }
 
-export default function App() {
+function AppCanvas() {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -208,6 +239,7 @@ export default function App() {
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const pipelineRef = useRef(pipeline);
+  const { screenToFlowPosition } = useReactFlow();
 
   nodesRef.current = nodes;
   edgesRef.current = edges;
@@ -231,6 +263,26 @@ export default function App() {
     }
     return ordered;
   }, [components]);
+
+  const paletteGroups = useMemo(() => {
+    const groups = new Map<string, ComponentInfo[]>();
+    for (const c of paletteItems) {
+      const cat = categoryForType(c.type);
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(c);
+    }
+    const ordered: { id: string; label: string; items: ComponentInfo[] }[] = [];
+    for (const id of CATEGORY_GROUP_ORDER) {
+      const items = groups.get(id);
+      if (items?.length) ordered.push({ id, label: CATEGORY_GROUP_LABELS[id] || id, items });
+    }
+    for (const [id, items] of groups) {
+      if (!CATEGORY_GROUP_ORDER.includes(id as (typeof CATEGORY_GROUP_ORDER)[number])) {
+        ordered.push({ id, label: CATEGORY_GROUP_LABELS[id] || id, items });
+      }
+    }
+    return ordered;
+  }, [paletteItems]);
 
   const loadPipeline = useCallback(
     async (p: Pipeline) => {
@@ -352,13 +404,51 @@ export default function App() {
     }, 600);
   }, []);
 
+  const ensurePipeline = useCallback(async (): Promise<Pipeline> => {
+    if (pipelineRef.current) return pipelineRef.current;
+    const created = await api.createPipeline({
+      name: "Untitled pipeline",
+      description: "Built from the component palette (non-AI path)",
+      nodes: [],
+      edges: [],
+      metadata: { created_via: "palette" },
+    });
+    await loadPipeline(created);
+    return created;
+  }, [loadPipeline]);
+
+  const newBlankPipeline = useCallback(async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const created = await api.createPipeline({
+        name: "Untitled pipeline",
+        description: "Blank canvas — drag components from the palette",
+        nodes: [],
+        edges: [],
+        metadata: { created_via: "blank" },
+      });
+      await loadPipeline(created);
+      setMapperOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadPipeline]);
+
   const addComponentNode = useCallback(
-    (comp: ComponentInfo) => {
-      if (!pipelineRef.current) return;
+    async (comp: ComponentInfo, position?: { x: number; y: number }) => {
+      try {
+        await ensurePipeline();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return;
+      }
       const id = `${comp.type.replace(/_/g, "")}-${Math.random().toString(36).slice(2, 7)}`;
       setNodes((nds) => {
-        const x = 80 + nds.length * 36;
-        const y = 120 + (nds.length % 4) * 40;
+        const x = position?.x ?? 80 + nds.length * 36;
+        const y = position?.y ?? 120 + (nds.length % 4) * 40;
         const label =
           comp.type === "tmap" ? "Field Mapper" : comp.display_name || comp.type;
         const newNode: Node = {
@@ -377,8 +467,29 @@ export default function App() {
       setSelectedId(id);
       schedulePersist();
     },
-    [setNodes, schedulePersist],
+    [ensurePipeline, setNodes, schedulePersist],
   );
+
+  const onPaletteDragStart = (event: DragEvent, comp: ComponentInfo) => {
+    event.dataTransfer.setData(DND_MIME, comp.type);
+    event.dataTransfer.setData("text/plain", comp.type);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const onCanvasDragOver = (event: DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+
+  const onCanvasDrop = async (event: DragEvent) => {
+    event.preventDefault();
+    const type = event.dataTransfer.getData(DND_MIME) || event.dataTransfer.getData("text/plain");
+    if (!type) return;
+    const comp = componentByType[type] || paletteItems.find((c) => c.type === type);
+    if (!comp) return;
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    await addComponentNode(comp, position);
+  };
 
   const saveSchedule = async () => {
     if (!pipeline) return;
@@ -517,6 +628,16 @@ export default function App() {
           <button
             type="button"
             className="btn"
+            data-testid="new-blank"
+            onClick={newBlankPipeline}
+            disabled={busy}
+            title="Start an empty pipeline and add components from the palette"
+          >
+            New blank
+          </button>
+          <button
+            type="button"
+            className="btn"
             data-testid="load-demo"
             onClick={loadDemo}
             disabled={busy}
@@ -539,32 +660,42 @@ export default function App() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="main">
-        <aside className="palette" data-testid="component-palette">
+        <aside className="palette" data-testid="component-palette" aria-label="Component palette">
           <h3>Components</h3>
-          <p className="palette-hint">Click to add — original icons, no vendor logos</p>
+          <p className="palette-hint">
+            Drag onto the canvas or click to add. Primary non-AI build path.
+          </p>
           <div className="palette-list">
-            {paletteItems.map((c) => {
-              const cat = categoryForType(c.type);
-              const label =
-                c.type === "tmap" ? "Field Mapper" : c.display_name || c.type;
-              return (
-                <button
-                  key={c.type}
-                  type="button"
-                  className={`palette-item cat-${cat}`}
-                  title={c.type}
-                  disabled={!pipeline || busy}
-                  onClick={() => addComponentNode(c)}
-                >
-                  <span className="palette-icon">
-                    <ComponentGlyph type={c.type} size={15} />
-                  </span>
-                  <span className="palette-label">{label}</span>
-                </button>
-              );
-            })}
+            {paletteGroups.map((group) => (
+              <div key={group.id} className="palette-group" data-testid={`palette-group-${group.id}`}>
+                <div className="palette-group-label">{group.label}</div>
+                {group.items.map((c) => {
+                  const cat = categoryForType(c.type);
+                  const label =
+                    c.type === "tmap" ? "Field Mapper" : c.display_name || c.type;
+                  return (
+                    <button
+                      key={c.type}
+                      type="button"
+                      className={`palette-item cat-${cat}`}
+                      title={`${c.type} — drag or click to add`}
+                      draggable={!busy}
+                      data-testid={`palette-item-${c.type}`}
+                      disabled={busy}
+                      onDragStart={(e) => onPaletteDragStart(e, c)}
+                      onClick={() => void addComponentNode(c)}
+                    >
+                      <span className="palette-icon">
+                        <ComponentGlyph type={c.type} size={15} />
+                      </span>
+                      <span className="palette-label">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
             {!paletteItems.length && (
-              <p className="empty-hint">Connect API to load palette.</p>
+              <p className="empty-hint">Connect API to load palette from /api/components.</p>
             )}
           </div>
         </aside>
@@ -593,6 +724,8 @@ export default function App() {
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             fitView
+            onDrop={(e) => void onCanvasDrop(e)}
+            onDragOver={onCanvasDragOver}
             onNodeClick={(_, n) => { setSelectedId(n.id); setDiscoverMsg(null); setMapperOpen(false); }}
             onNodeDoubleClick={(_, n) => {
               setSelectedId(n.id);
@@ -633,7 +766,7 @@ export default function App() {
                 <p className="pipeline-desc">{pipeline.description || "No description"}</p>
               </>
             ) : (
-              <p className="empty-hint">Load the demo or generate with AI.</p>
+              <p className="empty-hint">Use the palette, New blank, Load demo, or AI Build.</p>
             )}
           </div>
 
@@ -681,7 +814,7 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              <p className="empty-hint">Load a pipeline to schedule runs.</p>
+              <p className="empty-hint">Open a pipeline (palette / blank / demo) to schedule runs.</p>
             )}
           </div>
 
@@ -841,5 +974,13 @@ export default function App() {
         <span>{API_BASE}</span>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <AppCanvas />
+    </ReactFlowProvider>
   );
 }
