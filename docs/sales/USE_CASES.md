@@ -28,6 +28,9 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 | **PGP encrypt + decrypt** | `pgp_encrypt` / `pgp_decrypt` |
 | **XML records → rows** | `xml_parser` (tag / xpath-lite) |
 | **MySQL param shape** | `mysql_source` / `mysql_destination` (demo → SQLite) |
+| **Kafka → map → job trigger** | **Kafka Source** (demo fixture) → Field Mapper → **Databricks Job** (demo sidecar) |
+| **S3 → Databricks orchestration** | **S3 Source** → **Databricks Job** trigger (not embedded Spark) |
+| **Schedule in one place** | Enable cron + timezone on a pipeline (Community self-hosted poller) |
 
 ### Honesty on SFTP & Postgres demos
 
@@ -37,6 +40,8 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 | `sftp_destination` | Writes under `data/out/sftp_mock/` — **no real upload** | same credentials + `FORMULAETL_DEMO=0` |
 | `postgres_source` | Reads **SQLite** `data/demo.db` or fixture rows — **not live Postgres** | DSN or host/db/user/password + `FORMULAETL_DEMO=0` + network |
 | `postgres_destination` | Writes SQLite + CSV under `data/out/postgres_demo/` | real DSN + `FORMULAETL_DEMO=0` |
+| `kafka_source` | Reads `fixtures/sample/kafka_orders.jsonl` — **no broker** | brokers + topic; optional `pip install formulaetl[kafka]` or `confluent-kafka` |
+| `databricks_job` | Writes SUCCESS sidecar under `data/out/databricks_demo/` | workspace_host + token + job_id + `FORMULAETL_DEMO=0` |
 
 ## Partial / params-only today
 
@@ -44,6 +49,7 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 |----------|--------|
 | Real AWS S3 / real Snowflake | Component exists; needs credentials + `FORMULAETL_DEMO=0` |
 | Real SFTP / real Postgres | Components exist; need credentials + `FORMULAETL_DEMO=0` (demo mocks the wire) |
+| Real Kafka / real Databricks Jobs API | Components exist; need broker/workspace creds + optional extras + `FORMULAETL_DEMO=0` |
 | Filter rows | Component exists |
 | Multi-step transforms | Chain Transform nodes |
 
@@ -52,11 +58,11 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 | Use case | Planned |
 |----------|---------|
 | SQL Server / Oracle / full JDBC catalog | Next after Postgres pattern |
-| Kafka / event streams | Later |
 | Salesforce / SAP / mainframe | Later |
-| Spark large-scale | Later |
+| Embedded Spark large-scale engine | Out of scope — orchestrate *their* Databricks jobs instead |
 | Shared joblets / contexts / enterprise lineage UI | Enterprise tier *(planned)* |
+| Cloud HA multi-node scheduler | Enterprise / paid *(planned)* — Community ships self-hosted cron |
 
 ## How to talk to clients
 
-> “We match the visual ETL jobs that keep renewals: **Field Mapper expressions, sort, aggregate, filter, PGP encrypt/decrypt, Excel/API/XML, SFTP, Postgres/MySQL shapes**, plus **Python Row** for custom logic in a sandbox. Demo mode mocks SFTP/DB so you can run without credentials. We’re not claiming Spark or a full multi-output mapper IDE on day one.”
+> “We match the visual ETL jobs companies run now: **API read, Kafka read, S3 → Databricks job trigger, Field Mapper, schedule in one place**. AI Build is a shortcut — the palette and params stand alone. Demo mode mocks Kafka/Databricks so you can run without credentials. Community includes a self-hosted scheduler; HA cloud scheduling is a later Enterprise lock. We’re not claiming an embedded Spark engine or fabricated price lists.”

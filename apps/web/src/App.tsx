@@ -22,16 +22,80 @@ import {
   type PipelineNode,
   type RunStatus,
 } from "./api";
-import { EtlNode, type EtlNodeData, type RunVisual } from "./EtlNode";
+import { EtlNode, ComponentGlyph, categoryForType, CAT_COLORS, type EtlNodeData, type RunVisual } from "./EtlNode";
 import { NodeInspector, missingRequiredKeys } from "./NodeInspector";
 import { SchemaMapper } from "./SchemaMapper";
 
-const DEMO_ID = "demo-core-path";
+const DEMO_ID = "demo-api-kafka-databricks";
 const DEFAULT_PROMPT =
-  "Read encrypted files from S3, decrypt using PGP, validate these 17 columns, reject invalid records, transform dates, load good records into Snowflake and archive processed files.";
+  "Read orders from a Kafka topic, map fields, and trigger a Databricks notebook job.";
 
 function isMapperType(t: string): boolean {
   return t === "column_map" || t === "tmap";
+}
+
+const PALETTE_ORDER = [
+  "kafka_source",
+  "s3_source",
+  "http_api_source",
+  "excel_source",
+  "sftp_source",
+  "local_file_source",
+  "postgres_source",
+  "mysql_source",
+  "sqlite_source",
+  "csv_parser",
+  "json_parser",
+  "xml_parser",
+  "column_map",
+  "tmap",
+  "transform",
+  "schema_validate",
+  "filter",
+  "sort",
+  "aggregate",
+  "dedupe",
+  "lookup_join",
+  "python_row",
+  "pgp_decrypt",
+  "pgp_encrypt",
+  "databricks_job",
+  "snowflake_destination",
+  "local_file_destination",
+  "excel_destination",
+  "sftp_destination",
+  "postgres_destination",
+  "mysql_destination",
+  "sqlite_destination",
+  "archive_files",
+  "logger_metrics",
+];
+
+function defaultConfigFor(type: string): Record<string, unknown> {
+  if (type === "kafka_source")
+    return {
+      brokers: "demo",
+      topic: "orders",
+      group_id: "formulaetl",
+      auto_offset_reset: "earliest",
+      max_messages: 100,
+      security: "plain",
+      format: "json",
+      demo: true,
+    };
+  if (type === "databricks_job")
+    return {
+      workspace_host: "demo",
+      job_id: "1001",
+      notebook_params: ["source=formulaetl"],
+      wait_for_completion: true,
+      demo: true,
+    };
+  if (type === "s3_source") return { bucket: "demo", key: "demo/orders_encrypted.csv.pgp" };
+  if (type === "http_api_source")
+    return { url: "https://api.example.com/v1/orders", method: "GET", json_path: "data.items", demo: true };
+  if (type === "local_file_destination") return { path: "data/out/output.csv", format: "csv" };
+  return {};
 }
 
 const nodeTypes: NodeTypes = { etl: EtlNode };
@@ -135,6 +199,11 @@ export default function App() {
   const [mapperOpen, setMapperOpen] = useState(false);
   const [discoverBusy, setDiscoverBusy] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState<string | null>(null);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleCron, setScheduleCron] = useState("*/5 * * * *");
+  const [scheduleTz, setScheduleTz] = useState("UTC");
+  const [scheduleInfo, setScheduleInfo] = useState<string | null>(null);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -150,6 +219,19 @@ export default function App() {
     return map;
   }, [components]);
 
+  const paletteItems = useMemo(() => {
+    const byType = new Map(components.map((c) => [c.type, c]));
+    const ordered: ComponentInfo[] = [];
+    for (const t of PALETTE_ORDER) {
+      const c = byType.get(t);
+      if (c) ordered.push(c);
+    }
+    for (const c of components) {
+      if (!PALETTE_ORDER.includes(c.type)) ordered.push(c);
+    }
+    return ordered;
+  }, [components]);
+
   const loadPipeline = useCallback(
     async (p: Pipeline) => {
       setPipeline(p);
@@ -158,6 +240,22 @@ export default function App() {
       setEdges(flow.edges);
       setSelectedId(null);
       setRun(null);
+      try {
+        const sched = await api.getSchedule(p.id);
+        setScheduleEnabled(Boolean(sched.enabled));
+        setScheduleCron(sched.cron || "*/5 * * * *");
+        setScheduleTz(sched.timezone || "UTC");
+        setScheduleInfo(
+          sched.enabled && sched.next_run_at
+            ? `Next: ${new Date(sched.next_run_at * 1000).toISOString()}`
+            : sched.last_status
+              ? `Last: ${sched.last_status}`
+              : null,
+        );
+      } catch {
+        setScheduleEnabled(false);
+        setScheduleInfo(null);
+      }
     },
     [setNodes, setEdges],
   );
@@ -253,6 +351,56 @@ export default function App() {
       }
     }, 600);
   }, []);
+
+  const addComponentNode = useCallback(
+    (comp: ComponentInfo) => {
+      if (!pipelineRef.current) return;
+      const id = `${comp.type.replace(/_/g, "")}-${Math.random().toString(36).slice(2, 7)}`;
+      setNodes((nds) => {
+        const x = 80 + nds.length * 36;
+        const y = 120 + (nds.length % 4) * 40;
+        const label =
+          comp.type === "tmap" ? "Field Mapper" : comp.display_name || comp.type;
+        const newNode: Node = {
+          id,
+          type: "etl",
+          position: { x, y },
+          data: {
+            label,
+            componentType: comp.type,
+            config: defaultConfigFor(comp.type),
+            runVisual: "idle",
+          } satisfies EtlNodeData,
+        };
+        return [...nds, newNode];
+      });
+      setSelectedId(id);
+      schedulePersist();
+    },
+    [setNodes, schedulePersist],
+  );
+
+  const saveSchedule = async () => {
+    if (!pipeline) return;
+    setScheduleBusy(true);
+    setError(null);
+    try {
+      const spec = await api.putSchedule(pipeline.id, {
+        enabled: scheduleEnabled,
+        cron: scheduleCron.trim() || "*/5 * * * *",
+        timezone: scheduleTz.trim() || "UTC",
+      });
+      setScheduleInfo(
+        spec.enabled && spec.next_run_at
+          ? `Next: ${new Date(spec.next_run_at * 1000).toISOString()}`
+          : "Schedule saved (disabled)",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
 
   const onAIBuild = async () => {
     if (!prompt.trim()) return;
@@ -391,6 +539,35 @@ export default function App() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="main">
+        <aside className="palette" data-testid="component-palette">
+          <h3>Components</h3>
+          <p className="palette-hint">Click to add — original icons, no vendor logos</p>
+          <div className="palette-list">
+            {paletteItems.map((c) => {
+              const cat = categoryForType(c.type);
+              const label =
+                c.type === "tmap" ? "Field Mapper" : c.display_name || c.type;
+              return (
+                <button
+                  key={c.type}
+                  type="button"
+                  className={`palette-item cat-${cat}`}
+                  title={c.type}
+                  disabled={!pipeline || busy}
+                  onClick={() => addComponentNode(c)}
+                >
+                  <span className="palette-icon">
+                    <ComponentGlyph type={c.type} size={15} />
+                  </span>
+                  <span className="palette-label">{label}</span>
+                </button>
+              );
+            })}
+            {!paletteItems.length && (
+              <p className="empty-hint">Connect API to load palette.</p>
+            )}
+          </div>
+        </aside>
         <div className={`canvas-wrap${busy ? " is-running" : ""}${!busy && run?.status === "success" ? " run-success" : ""}${!busy && run?.status === "failed" ? " run-failed" : ""}`}>
           <div className="ai-bar">
             <textarea
@@ -433,6 +610,8 @@ export default function App() {
                 const t = (n.data as { componentType?: string })?.componentType || "";
                 if (t.includes("pgp")) return "#9333ea";
                 if (t.includes("schema_validate")) return "#eab308";
+                if (t.includes("databricks")) return CAT_COLORS.orch;
+                if (t.includes("kafka")) return CAT_COLORS.stream;
                 if (t.includes("snowflake") || t.includes("postgres") || t.includes("mysql") || t.includes("sqlite")) return "#4f46e5";
                 if (t.includes("file") || t.includes("excel") || t.includes("archive")) return "#0d9488";
                 if (t.includes("destination") || t.includes("sftp_destination")) return "#16a34a";
@@ -455,6 +634,54 @@ export default function App() {
               </>
             ) : (
               <p className="empty-hint">Load the demo or generate with AI.</p>
+            )}
+          </div>
+
+          <div className="sidebar-section">
+            <h3>Schedule</h3>
+            {pipeline ? (
+              <div className="schedule-form" data-testid="schedule-form">
+                <label className="schedule-row">
+                  <input
+                    type="checkbox"
+                    checked={scheduleEnabled}
+                    onChange={(e) => setScheduleEnabled(e.target.checked)}
+                    data-testid="schedule-enabled"
+                  />
+                  <span>Enable schedule</span>
+                </label>
+                <label className="field-label">Cron expression</label>
+                <input
+                  className="schedule-input"
+                  value={scheduleCron}
+                  onChange={(e) => setScheduleCron(e.target.value)}
+                  placeholder="*/5 * * * *"
+                  data-testid="schedule-cron"
+                />
+                <label className="field-label">Timezone</label>
+                <input
+                  className="schedule-input"
+                  value={scheduleTz}
+                  onChange={(e) => setScheduleTz(e.target.value)}
+                  placeholder="UTC"
+                  data-testid="schedule-tz"
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={scheduleBusy}
+                  onClick={saveSchedule}
+                  data-testid="schedule-save"
+                >
+                  {scheduleBusy ? "Saving…" : "Save schedule"}
+                </button>
+                {scheduleInfo && <p className="schedule-info">{scheduleInfo}</p>}
+                <p className="schedule-note">
+                  Community self-hosted scheduler. Cloud HA scheduling is a planned Enterprise lock.
+                </p>
+              </div>
+            ) : (
+              <p className="empty-hint">Load a pipeline to schedule runs.</p>
             )}
           </div>
 

@@ -47,6 +47,7 @@ _SOURCE_ALIASES = {
     "excel": "excel_source",
     "http": "http_api_source",
     "api": "http_api_source",
+    "kafka": "kafka_source",
     "s3": "s3_source",
     "sqlite": "sqlite_source",
     "postgres": "postgres_source",
@@ -578,6 +579,40 @@ def _discover_s3(config: dict[str, Any], work_dir: Path, demo_mode: bool) -> Sch
     )
 
 
+def _discover_kafka(
+    config: dict[str, Any], work_dir: Path, demo_mode: bool
+) -> SchemaResult:
+    """Demo: infer columns from kafka_orders fixture (JSONL)."""
+    custom = config.get("fixture_path")
+    candidates = []
+    if custom:
+        candidates.append(_resolve_path(work_dir, str(custom)))
+    candidates.extend(
+        [
+            work_dir / "fixtures" / "sample" / "kafka_orders.jsonl",
+            work_dir / "fixtures" / "sample" / "kafka_orders.json",
+        ]
+    )
+    path = next((p for p in candidates if p.exists()), None)
+    if path is None:
+        raise FileNotFoundError("Kafka schema demo: fixtures/sample/kafka_orders.jsonl missing")
+    rows: list[dict[str, Any]] = []
+    if path.suffix.lower() == ".jsonl":
+        for ln in path.read_text(encoding="utf-8").splitlines():
+            if not ln.strip():
+                continue
+            rows.append(json.loads(ln))
+            if len(rows) >= 20:
+                break
+    else:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            rows = [r for r in data if isinstance(r, dict)][:20]
+        elif isinstance(data, dict):
+            rows = [data]
+    return _columns_from_rows(rows)
+
+
 def discover(
     component_type: str,
     config: dict[str, Any] | None = None,
@@ -614,6 +649,8 @@ def discover(
             result = _discover_local_file(config, wd)
     elif ctype in ("http_api_source",):
         result = _discover_http_api(config, wd, demo_mode)
+    elif ctype in ("kafka_source",):
+        result = _discover_kafka(config, wd, demo_mode)
     elif ctype in ("sqlite_source",):
         result = _discover_sqlite(config, wd)
     elif ctype in ("postgres_source", "mysql_source"):

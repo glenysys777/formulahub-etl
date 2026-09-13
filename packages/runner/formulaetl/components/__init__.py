@@ -3,6 +3,7 @@
 from formulaetl.components.source_file import LocalFileSource
 from formulaetl.components.source_s3 import S3Source
 from formulaetl.components.http_api_source import HttpApiSource
+from formulaetl.components.kafka_source import KafkaSource
 from formulaetl.components.excel_source import ExcelSource
 from formulaetl.components.sqlite_source import SQLiteSource
 from formulaetl.components.sftp_source import SFTPSource
@@ -30,6 +31,7 @@ from formulaetl.components.sftp_destination import SFTPDestination
 from formulaetl.components.postgres_destination import PostgresDestination
 from formulaetl.components.mysql_destination import MySQLDestination
 from formulaetl.components.dest_snowflake import SnowflakeDestination
+from formulaetl.components.databricks_job import DatabricksJob
 from formulaetl.components.archive import ArchiveFiles
 from formulaetl.components.logger import LoggerMetrics
 
@@ -37,6 +39,7 @@ __all__ = [
     "LocalFileSource",
     "S3Source",
     "HttpApiSource",
+    "KafkaSource",
     "ExcelSource",
     "SQLiteSource",
     "SFTPSource",
@@ -64,6 +67,7 @@ __all__ = [
     "PostgresDestination",
     "MySQLDestination",
     "SnowflakeDestination",
+    "DatabricksJob",
     "ArchiveFiles",
     "LoggerMetrics",
 ]

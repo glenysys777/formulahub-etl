@@ -20,6 +20,7 @@ def client(work_dir: Path, monkeypatch):
     main()
     monkeypatch.setenv("FORMULAETL_WORK_DIR", str(ROOT))
     monkeypatch.setenv("FORMULAETL_DEMO", "1")
+    monkeypatch.setenv("FORMULAETL_SCHEDULER", "0")
 
     # Import after env set
     import importlib
@@ -29,6 +30,7 @@ def client(work_dir: Path, monkeypatch):
     # Patch module-level WORK_DIR
     formulaetl_api.WORK_DIR = ROOT
     formulaetl_api.DEMO_MODE = True
+    formulaetl_api._scheduler = None
 
     with TestClient(formulaetl_api.app) as c:
         yield c
@@ -79,6 +81,8 @@ def test_list_components(client: TestClient):
         "xml_parser",
         "mysql_source",
         "mysql_destination",
+        "kafka_source",
+        "databricks_job",
     ):
         assert required in types
     by_type = {c["type"]: c for c in body}

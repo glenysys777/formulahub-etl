@@ -53,6 +53,10 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
     """Map English keywords to a runnable FormulaETL DAG."""
     text = description.strip()
     want_api = _has(text, "api", "rest", "http", "endpoint")
+    want_kafka = _has(text, "kafka", "topic", "stream", "event stream", "consumer group")
+    want_databricks = _has(
+        text, "databricks", "notebook job", "spark job", "spark job trigger", "databricks job"
+    )
     want_excel = _has(text, "excel", "xlsx", "spreadsheet", "xls")
     want_sqlite = _has(text, "sqlite", "sql db", "demo.db") and not _has(
         text, "postgres", "postgresql", "sftp"
@@ -76,6 +80,7 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
     want_xml = _has(text, "xml", "xml parser", "parse xml")
     want_s3 = (
         (not want_api)
+        and (not want_kafka)
         and (not want_excel)
         and (not want_sqlite)
         and (not want_postgres)
@@ -90,15 +95,21 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
     want_validate = (
         _has(text, "validate", "schema", "reject", "invalid", "columns")
         or want_api
+        or want_kafka
         or want_excel
         or want_postgres
         or want_sftp
     )
     want_transform = (
-        _has(text, "transform", "date", "cast", "rename") or want_api or want_excel or want_postgres
+        _has(text, "transform", "date", "cast", "rename")
+        or want_api
+        or want_kafka
+        or want_excel
+        or want_postgres
     )
     want_column_map = (
         want_api
+        or want_kafka
         or want_excel
         or want_sftp
         or _has(text, "column map", "rename columns", "map columns")
@@ -113,14 +124,20 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
     want_sftp_dest = want_sftp and _has(
         text, "upload", "put", "sftp destination", "send to sftp", "to sftp"
     )
-    if want_api or want_excel or want_sqlite or want_postgres or want_mysql or want_sftp:
-        want_snowflake = _has(text, "snowflake", "warehouse")
+    if want_api or want_excel or want_sqlite or want_postgres or want_mysql or want_sftp or want_kafka:
+        want_snowflake = _has(text, "snowflake", "warehouse") and not want_databricks
     elif want_tmap or want_python or want_aggregate or want_sort or want_xml:
-        want_snowflake = _has(text, "snowflake", "warehouse")
+        want_snowflake = _has(text, "snowflake", "warehouse") and not want_databricks
         want_s3 = want_s3 and _has(text, "s3", "bucket")
     else:
-        want_snowflake = _has(text, "snowflake", "warehouse") or not _has(
-            text, "local destination", "write csv", "file destination", "excel"
+        want_snowflake = (
+            _has(text, "snowflake", "warehouse")
+            or (
+                not want_databricks
+                and not _has(
+                    text, "local destination", "write csv", "file destination", "excel"
+                )
+            )
         )
     want_archive = _has(text, "archive", "processed file")
     want_rejects = _has(text, "reject", "invalid")
@@ -168,6 +185,24 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
             },
         )
         chain.append("api")
+    elif want_kafka:
+        node(
+            "kafka",
+            "kafka_source",
+            "Kafka Source",
+            {
+                "brokers": "demo",
+                "topic": "orders",
+                "group_id": "formulaetl",
+                "auto_offset_reset": "earliest",
+                "max_messages": 100,
+                "timeout_sec": 10,
+                "security": "plain",
+                "format": "json",
+                "demo": True,
+            },
+        )
+        chain.append("kafka")
     elif want_sftp and want_excel:
         node(
             "sftp",
@@ -333,6 +368,15 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
                 "qty:quantity",
                 "amt:amount",
             ]
+            if want_kafka:
+                mappings = [
+                    "order_id:order_id",
+                    "customer_id:customer_id",
+                    "customer_name:customer_name",
+                    "product_sku:product_sku",
+                    "quantity:quantity",
+                    "amount:amount",
+                ]
         node(
             "map",
             "column_map",
@@ -386,7 +430,7 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
         chain.append("agg")
 
     if want_validate:
-        if want_api or want_excel:
+        if want_api or want_excel or want_kafka:
             api_cols = {
                 "order_id": "int",
                 "customer_id": "int",
@@ -415,7 +459,7 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
         chain.append("validate")
 
     if want_transform:
-        if want_api or want_excel:
+        if want_api or want_excel or want_kafka:
             cast_cfg = {
                 "order_date": {
                     "type": "date",
@@ -481,6 +525,23 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
             y=80,
         )
         chain.append("snowflake")
+    elif want_databricks:
+        node(
+            "databricks",
+            "databricks_job",
+            "Databricks Job",
+            {
+                "workspace_host": "demo",
+                "job_id": "1001",
+                "notebook_params": ["source=formulaetl"],
+                "wait_for_completion": True,
+                "poll_interval_sec": 1,
+                "demo": True,
+                "demo_output_dir": "data/out/databricks_demo",
+            },
+            y=80,
+        )
+        chain.append("databricks")
     elif want_mysql and _has(text, "write", "load", "insert", "destination", "into"):
         node(
             "mysql_dest",
@@ -557,7 +618,16 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
         src, tgt = chain[i], chain[i + 1]
         handle = "out" if src == "validate" and tgt == "transform" else None
         # Also when validate goes directly to destination
-        if src == "validate" and tgt in ("snowflake", "dest", "sqlite_dest", "pg_dest", "sftp_dest", "mysql_dest", "pgp_enc"):
+        if src == "validate" and tgt in (
+            "snowflake",
+            "dest",
+            "sqlite_dest",
+            "pg_dest",
+            "sftp_dest",
+            "mysql_dest",
+            "pgp_enc",
+            "databricks",
+        ):
             handle = "out"
         edge(src, tgt, handle)
 
@@ -584,6 +654,14 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
 
     if name:
         pipeline_name = name
+    elif want_kafka and want_databricks:
+        pipeline_name = "Kafka → Databricks Job"
+    elif want_s3 and want_databricks:
+        pipeline_name = "S3 → Databricks Job"
+    elif want_kafka:
+        pipeline_name = "Kafka → Transform"
+    elif want_databricks:
+        pipeline_name = "Trigger Databricks Job"
     elif want_sftp and want_excel:
         pipeline_name = "SFTP → Excel → Map"
     elif want_sftp:
@@ -625,6 +703,7 @@ _DISCOVERABLE_SOURCES = {
     "excel_source",
     "local_file_source",
     "http_api_source",
+    "kafka_source",
     "sqlite_source",
     "postgres_source",
     "mysql_source",
@@ -913,6 +992,7 @@ def enrich_pipeline_with_discovered_mappings(
             "postgres_destination",
             "mysql_destination",
             "snowflake_destination",
+            "databricks_job",
             "archive_files",
         }
         insert_at = len(new_nodes)
@@ -987,12 +1067,12 @@ def llm_build(description: str, name: str | None = None) -> PipelineDefinition |
             "You are FormulaETL's pipeline architect. Reply with ONLY valid JSON matching "
             "PipelineDefinition: {id,name,description,nodes:[{id,type,label,config,position}],"
             "edges:[{id,source,target,sourceHandle?}]}. "
-            "Allowed types: s3_source, local_file_source, http_api_source, excel_source, "
+            "Allowed types: s3_source, local_file_source, http_api_source, kafka_source, excel_source, "
             "sqlite_source, sftp_source, postgres_source, mysql_source, pgp_decrypt, pgp_encrypt, "
             "csv_parser, json_parser, xml_parser, schema_validate, column_map, tmap, transform, "
             "filter, sort, aggregate, python_row, dedupe, lookup_join, local_file_destination, "
             "excel_destination, sqlite_destination, sftp_destination, postgres_destination, "
-            "mysql_destination, snowflake_destination, archive_files, logger_metrics."
+            "mysql_destination, snowflake_destination, databricks_job, archive_files, logger_metrics."
         )
         user = f"Build a pipeline for: {description}"
 

@@ -1,0 +1,74 @@
+{
+  "id": "demo-api-kafka-databricks",
+  "name": "Kafka → Field Mapper → Databricks Job",
+  "description": "Company pattern: read order events from Kafka (demo fixture), map fields, trigger a Databricks notebook/job run (demo sidecar). No real broker or workspace required with FORMULAETL_DEMO=1.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "kafka",
+      "type": "kafka_source",
+      "label": "Kafka Source",
+      "config": {
+        "brokers": "demo",
+        "topic": "orders",
+        "group_id": "formulaetl-demo",
+        "auto_offset_reset": "earliest",
+        "max_messages": 100,
+        "timeout_sec": 10,
+        "security": "plain",
+        "format": "json",
+        "demo": true
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "map",
+      "type": "column_map",
+      "label": "Field Mapper",
+      "config": {
+        "mappings": [
+          "order_id:order_id",
+          "customer_id:customer_id",
+          "customer_name:customer_name",
+          "email:email",
+          "product_sku:product_sku",
+          "quantity:quantity",
+          "amount:amount",
+          "order_date:order_date",
+          "status:status",
+          "currency:currency",
+          "channel:channel"
+        ],
+        "drop_unmapped": false
+      },
+      "position": { "x": 280, "y": 180 }
+    },
+    {
+      "id": "databricks",
+      "type": "databricks_job",
+      "label": "Databricks Job",
+      "config": {
+        "workspace_host": "demo",
+        "job_id": "1001",
+        "notebook_params": [
+          "source=kafka",
+          "pipeline=formulaetl"
+        ],
+        "wait_for_completion": true,
+        "poll_interval_sec": 1,
+        "demo": true,
+        "demo_output_dir": "data/out/databricks_demo"
+      },
+      "position": { "x": 520, "y": 180 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "kafka", "target": "map" },
+    { "id": "e2", "source": "map", "target": "databricks" }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "kafka-databricks"
+  }
+}
