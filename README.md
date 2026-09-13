@@ -5,6 +5,7 @@
 FormulaHub ETL is a drag-and-drop pipeline designer. Underneath, it generates and runs clean Python jobs through a lightweight DAG runner. Git-native pipelines, no vendor lock-in.
 
 **Product site:** [formulahub.io/etl](https://formulahub.io/etl)  
+**Live UI (Vercel):** [formulahub-etl.vercel.app](https://formulahub-etl.vercel.app) — designer only; API still local/Docker  
 **License:** [Apache License 2.0](./LICENSE)
 
 ---
@@ -68,6 +69,10 @@ Or with Docker:
 ```bash
 make docker-up    # API :18765  ·  UI :18766
 ```
+
+### Hosted UI vs API
+
+The production UI at [formulahub-etl.vercel.app](https://formulahub-etl.vercel.app) is the static Vite app (`apps/web`). It does **not** run FastAPI or the Python runner on Vercel. Point a browser at the live UI for the canvas; run pipelines with `make api` / `make docker-up` (`FORMULAETL_DEMO=1`). See [docs/deploy.md](./docs/deploy.md) for Vercel project details and API hosting next steps (Railway / Fly / Render / Docker). Optional later: `CNAME etl.formulahub.io` → Vercel.
 
 ### Flagship demo
 
