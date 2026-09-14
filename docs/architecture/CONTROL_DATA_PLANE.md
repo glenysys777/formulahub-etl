@@ -1,39 +1,40 @@
 # Control plane vs data plane (north star)
 
-**Status:** design intent. Phase B did **not** split processes. It added in-process `DatasetHandle` / `ArtifactHandle` and a planner that feeds bounded `RowBatch`es or file handles. Control plane **is still** the data plane.
+**Status:** Phase D+E landed a **Community** control-plane split: HTTP enqueues runs; a worker (embedded or `make worker`) executes. Data plane is still the same sequential `PipelineRunner` (not Spark/K8s).
 
-Customer #1 production trust requires splitting what is today a **single Python process** (FastAPI + in-memory runs + sequential runner + cron thread).
+Customer #1 production trust still requires auth, secret refs, and a private worker next to customer data.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Control plane (API / UI / metadata)                     │
-│  • Pipeline JSON (no secrets)                           │
-│  • Authn/z, schedule records, run records               │
-│  • “Start run” / “cancel” / logs tail                   │
+│  • Pipeline + immutable versions (SQLite)               │
+│  • Schedule records, run ledger, run_events, node_runs  │
+│  • “Start run” → 202 queued / cancel (cancel TBD)       │
 │  Must not hold customer datasets in RAM                 │
 └──────────────────────────┬──────────────────────────────┘
-                           │ run contract (id, graph, secret refs)
+                           │ job_queue (run_id, version pin)
                            ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Data plane (private worker)                             │
-│  • Runs next to the customer’s VPC / files / warehouses │
+│ Data plane (worker process or embedded thread)          │
+│  • Claims QUEUED jobs; runs PipelineRunner              │
 │  • Pulls credentials from the customer’s vault/IAM      │
-│  • Reads/writes data without shipping it through SaaS   │
-│  • Bounded memory: chunked files, not list[dict] of all │
-│    rows; binary objects streamed to disk, not bytes[]   │
+│    (not yet — secrets still in JSON)                    │
+│  • Bounded memory: chunked files where Phase B/C allow  │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## Today (honest)
 
-Control plane **is** the data plane: `POST /run` executes `PipelineRunner` under a process lock and stores logs in `RunStore` memory. Default `FORMULAETL_DEMO=1` reads `./data/s3` and writes `./data/out/*`.
-
-Phase B: the same process now plans `artifact` vs `batches` vs `materialized_rows`. S3/SFTP/PGP prefer on-disk handles over `bytes` in `config`. Destinations still materialize `list[dict]`.
+- `POST /run` returns **202** + `queued`; worker persists `queued`→`running`→`success`/`failed`.
+- History survives API/worker restart (SQLite under `data/formulaetl.db`).
+- Runs pin `pipeline_version_id` so edits do not rewrite yesterday’s graph.
+- Default Community UX still embeds the worker in the API process.
+- CLI `formulaetl run` remains synchronous (no queue).
 
 ## Later (not this PR)
 
 - Do **not** add Spark, Kubernetes operators, or new connectors in order to “look like” a data plane.
-- First production shape: **authenticated control API + one private worker** that already runs the existing DAG with chunking and secret refs.
-- Multi-tenant hosted workers and HA schedulers are **ENTERPRISE**, after a design partner survives the single-worker path.
+- Next trust steps: **authenticated control API** + always-separate private worker + secret refs.
+- Multi-tenant hosted workers and HA schedulers are **ENTERPRISE**.
 
 See capability matrix in `docs/PRODUCTION_READINESS.md`.

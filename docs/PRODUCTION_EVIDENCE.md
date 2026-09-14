@@ -4,7 +4,8 @@ Claims in sales/README are **not** evidence. Each row is a statement we are will
 
 **Audit SHA (main / Phase A merge):** `cecb1af` (PR #4)  
 **Phase B merge tip:** `f2d8b57`  
-**Phase C branch tip:** `dbcc136`  
+**Phase C merge tip:** `dce51a6`  
+**Phase D+E branch tip:** `4fa3d21` (impl `5d719a7`)  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
@@ -16,11 +17,11 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | **127 passed**, 1 skipped (`RUN_CSV_1M`), 183 warnings (pgpy), 9.37s. Includes Phase C CSV/PGP/S3/SFTP hardening tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
-| A2 | Web production build | PROVEN **skipped this PR** | UI untouched | Phase A `npm run build` still stands; no `apps/web` changes in Phase C | Phase A | 2026-09-14 |
+| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | **133 passed**, 1 skipped (`RUN_CSV_1M`), warnings (pgpy). Includes Phase D+E async/durable tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
+| A2 | Web production build | PROVEN | `cd apps/web && npm install && npm run build` | **vite build OK** (175 modules). Poll loop accepts `queued`; no layout redesign. | this PR | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` | PROVEN **absent** | `ls .github/workflows` | Still no workflow files | `cecb1af` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
-| A5 | CSV 10K streaming benchmark | PROVEN | `iter_csv_batches` on 10_000-row file, `batch_size=500` | **10_000 rows**, 107 789 bytes, peak_batch=500, **0.0137s**, ~728 668 rows/s. Peak batch bounded (no full-file list during iteration). | this PR | 2026-09-14 |
+| A5 | CSV 10K streaming benchmark | PROVEN | Phase C | Unchanged | `dce51a6` | 2026-09-14 |
 
 ---
 
@@ -28,16 +29,15 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| B1 | Flagship S3→PGP→Snowflake **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | `status=success` (~115ms). S3 artifact path (no bytes); PGP decrypt → temp path; CSV stream/parse 13 rows; validate 10/3; Snowflake demo CSV + archive. | this PR | 2026-09-14 |
-| B2 | Kafka→Databricks **demo** | PROVEN **demo only** | pytest integration | Green on this PR | this PR | 2026-09-14 |
-| B3 | Lookup Join + Field Mapper demo | PROVEN **demo only** | pytest / CLI | Unchanged green | this PR | 2026-09-14 |
-| B4 | Historical founder screenshots / sidecar JSON | PROVEN as **demo artifacts only** | `docs/artifacts/EVIDENCE.md` | Unchanged | `b162987` | 2026-09-14 |
+| B1 | Flagship S3→PGP→Snowflake **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | `status=success` (~119ms). CLI still sync in-process; API path is async+SQLite. | this PR | 2026-09-14 |
+| B1b | Excel + API-map demos | PROVEN **demo only** | CLI run excel-to-file + api-map-transform | Both `status=success` on this PR | this PR | 2026-09-14 |
+| B2–B4 | Other demos / screenshots | PROVEN **demo only** | pytest / CLI | Unchanged intent | `dce51a6` | 2026-09-14 |
 
 ---
 
 ## C. Live systems (customer-shaped)
 
-Unchanged — all **UNPROVEN**. Live branches now have retries/timeouts/host-key (SFTP) and botocore retries + paginated list (S3); none executed against real endpoints in this PR.
+Unchanged — all **UNPROVEN**.
 
 ---
 
@@ -45,15 +45,15 @@ Unchanged — all **UNPROVEN**. Live branches now have retries/timeouts/host-key
 
 | ID | Claim | Status | Evidence | SHA | Date |
 |----|-------|--------|----------|-----|------|
-| D1 | Runner still sequential in-process | PROVEN | `PipelineRunner.run` topological loop; no workers | this PR | 2026-09-14 |
-| D2 | File hops use `ArtifactHandle` (S3/SFTP/PGP); runner does not copy `bytes` when a path exists | PROVEN | unchanged + Phase C large-PGP omits content/bytes when >64KiB plaintext | this PR | 2026-09-14 |
-| D3 | Row-wise nodes can be fed `RowBatch`es; blocking/fan-out still materialize `list[dict]` | PROVEN | planner + adapter | this PR | 2026-09-14 |
-| D4 | CSV reads via chunked `iter_csv_batches` / `DatasetHandle.from_csv_path` | PROVEN | `sdk/data.py`; A5; `test_csv_streaming.py` | this PR | 2026-09-14 |
-| D5 | RunStore is process memory | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
+| D1 | Runner DAG still sequential **inside** a worker | PROVEN | `PipelineRunner.run` topological loop; workers claim jobs concurrently across runs | this PR | 2026-09-14 |
+| D2–D4 | ArtifactHandle / RowBatch / CSV chunking | PROVEN | Phase B/C | `dce51a6` | 2026-09-14 |
+| D5 | Run history is durable SQLite (not process memory) | PROVEN | `formulaetl_api.db` + `RunStore`; `/health` → `run_store: sqlite` | this PR | 2026-09-14 |
 | D6 | No API authentication | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
-| D7 | Secrets may still live in node `config` JSON; refs supported for PGP | PROVEN | `private_key_ref` / `passphrase_ref` / `public_key_ref` resolve env; demo pipelines still use paths | this PR | 2026-09-14 |
-| D8 | SFTP live defaults to `RejectPolicy` host keys | PROVEN | `sftp_source.py`; `test_sftp_host_key_default_is_reject` | this PR | 2026-09-14 |
-| D9 | S3 prefix listing is paginated (`list_objects_v2` continuation) | PROVEN | `iter_s3_keys`; unit mock pagination | this PR | 2026-09-14 |
+| D7 | Secrets may still live in node `config` JSON | PROVEN | unchanged | Phase C | 2026-09-14 |
+| D8–D9 | SFTP host-key reject / S3 pagination | PROVEN | Phase C | `dce51a6` | 2026-09-14 |
+| D10 | `POST /api/pipelines/{id}/run` returns **202** + `status=queued` | PROVEN | API + `test_async_durable.py` | this PR | 2026-09-14 |
+| D11 | Global `_runner_lock` removed; concurrent claimed runs allowed | PROVEN | worker `max_concurrent`; concurrent smoke test | this PR | 2026-09-14 |
+| D12 | Runs pin immutable `pipeline_version_id` | PROVEN | versions table + pin test | this PR | 2026-09-14 |
 
 ---
 
@@ -65,31 +65,47 @@ Unchanged — all **UNPROVEN**. Live branches now have retries/timeouts/host-key
 
 ---
 
-## F. Phase C — bounded I/O (this PR)
+## F. Phase C — bounded I/O (historical)
+
+See main at `dce51a6`. CSV/PGP/S3/SFTP hardening unchanged in D+E.
+
+---
+
+## G. Phase D+E — async control plane + durable history (this PR)
 
 | ID | Claim | Status | Evidence |
 |----|-------|--------|----------|
-| F1 | CSV: delimiter/encoding/quotes/headers; malformed fail\|skip\|reject; extra/missing columns; nulls; row numbers; Unicode | PROVEN | `csv_parser.py` + `iter_csv_batches`; `tests/unit/test_csv_streaming.py` |
-| F2 | CSV 10K chunked parse with bounded peak batch | PROVEN | A5 + `test_csv_10k_*` |
-| F3 | CSV 1M optional soak | PROVEN **skipped by default** | `@pytest.mark.slow` + `RUN_CSV_1M=1`; not run in default CI time budget |
-| F4 | PGP: path/temp hop; wrong key / corrupt errors; no passphrase in logs; key refs | PROVEN | `test_pgp_hardening.py` |
-| F5 | PGP large plaintext omits artifact `content`/`bytes` | PROVEN | `test_pgp_large_file_stays_path_only` |
-| F6 | SFTP: timeouts, retries, host-key reject default, password+key paths, streaming `get` | PROVEN (unit/mock) | `test_s3_sftp_hardening.py`; live E2E UNPROVEN |
-| F7 | S3: botocore retries/timeouts, streaming `download_file`, paginated prefix list | PROVEN (unit/mock + demo) | same; live E2E UNPROVEN |
-| F8 | Temp artifact cleanup after run | PROVEN | runner `_cleanup_temps` (Phase B; still used) |
+| G1 | Job queue accepts run; HTTP returns before DAG finishes | PROVEN | `POST …/run` → 202 `queued`; `tests/api/test_async_durable.py` |
+| G2 | Worker claims + completes independently of request thread | PROVEN | `formulaetl_api.worker.RunWorker`; embedded by default; `make worker` for split process |
+| G3 | State transitions persisted (`queued`→`running`→`success`/`failed`) | PROVEN | `run_events` table; GET `/api/runs/{id}` includes `events` |
+| G4 | Node execution records persisted | PROVEN | `node_runs` (node_id, component_type, status, times, rows_*, error, duration_ms) |
+| G5 | Restart: pipelines, versions, runs, schedules survive | PROVEN | `test_restart_persistence` |
+| G6 | Version pin: edit does not rewrite yesterday’s run snapshot | PROVEN | `test_version_pin_survives_edit` |
+| G7 | Concurrent runs smoke (no global lock) | PROVEN | `test_concurrent_runs_smoke` |
+| G8 | Schema ready for Postgres later | PROVEN **shape only** | Portable SQL types in `db.py`; **no** Postgres runtime in this PR |
 
-### Remaining gaps (not this PR)
+### API change (documented)
 
-- Still **one process**. No async workers, no secrets vault, no auth.
-- `pgpy` still loads ciphertext/plaintext blobs while decrypting (library limit); we only stop *passing* large payloads to the next node.
-- Destinations still materialize full row lists. CSV parser still materializes `ComponentResult.rows` for the legacy adapter after streaming read.
-- Live S3/SFTP/warehouse E2E still **UNPROVEN**.
-- Not Spark, not K8s, not streaming Kafka.
+| Before | After |
+|--------|-------|
+| `POST /run` → **200** + terminal `status` (sync under global lock) | `POST /run` → **202** + `status=queued` + `pipeline_version_id` |
+| Body fields `run_id`, `status` | Same fields kept; added `pipeline_version_id` |
+| Status strings lowercase | Still lowercase: `queued`, `running`, `success`, `failed`, `cancelled`, `retrying`, `timed_out` (map to QUEUED/RUNNING/…) |
+| `GET /runs/{id}` memory-only | SQLite; adds `pipeline_version_id`, `node_runs`, `events` |
+| `/health` `run_store: memory` | `run_store: sqlite`; `readiness_level: ALPHA` |
+
+### Remaining gaps (honest)
+
+- Still **no auth**, no secrets vault, no live E2E in CI.
+- Worker may be **embedded** in the API process (Community default); split process is optional (`FORMULAETL_EMBEDDED_WORKER=0` + `make worker`).
+- Runner **inside** a job remains sequential; destinations may still materialize `list[dict]`.
+- Not Spark, not K8s, not billing, no new connectors.
+- Scheduler remains in-process cron poll (now **enqueues** instead of blocking).
 
 ---
 
 ## Notes
 
-- Pytest **count** for Phase C: **127 passed**, 1 skipped (Phase B was 99; Phase A was 87).
-- C-rows remain UNPROVEN.
-- Readiness: CSV/local file I/O moves toward **ALPHA** (chunked + policy); S3/SFTP live code remains **ALPHA code / DEMO CI**.
+- Readiness: durable runs + async accept move control-plane bookkeeping to **ALPHA**; overall product for Customer #1 live connectors remains **DEMO** until auth + live proofs.
+- Pytest **count** for Phase D+E: **133 passed**, 1 skipped (Phase C was 127; Phase B was 99; Phase A was 87).
+- CLI `formulaetl run` is still synchronous (no queue) — intentional for local demos.

@@ -5,6 +5,8 @@ data/rejects/
 data/tmp/
 data/pipelines/
 data/schedules/
+data/*.db
+data/*.db-*
 *.pyc
 __pycache__/
 .pytest_cache/

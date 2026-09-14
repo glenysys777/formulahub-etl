@@ -6,6 +6,8 @@ services:
     environment:
       FORMULAETL_DEMO: "1"
       FORMULAETL_WORK_DIR: /app
+      FORMULAETL_EMBEDDED_WORKER: "1"
+      FORMULAETL_DB_PATH: /app/data/formulaetl.db
     ports:
       - "18765:18765"
     volumes:
@@ -17,6 +19,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Optional out-of-process worker. Start with:
+  #   FORMULAETL_EMBEDDED_WORKER=0 docker compose up api worker web
+  worker:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    environment:
+      FORMULAETL_DEMO: "1"
+      FORMULAETL_WORK_DIR: /app
+      FORMULAETL_DB_PATH: /app/data/formulaetl.db
+    volumes:
+      - ./data:/app/data
+      - ./fixtures:/app/fixtures
+      - ./demos:/app/demos
+    command: ["python", "-m", "formulaetl_api.worker"]
+    profiles: ["split-worker"]
 
   web:
     build:

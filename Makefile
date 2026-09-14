@@ -1,4 +1,4 @@
-.PHONY: install seed test demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks api web build docker-up docker-down lint
+.PHONY: install seed test demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks api worker web build docker-up docker-down lint
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -59,6 +59,13 @@ demo-lookup-join: seed
 api: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
 		python3 -m uvicorn formulaetl_api.main:app --host 0.0.0.0 --port 18765 --app-dir packages/api
+
+# Standalone worker (optional). Default ``make api`` embeds a worker thread.
+# Use this when FORMULAETL_EMBEDDED_WORKER=0 so the API only enqueues.
+worker: seed
+	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) FORMULAETL_EMBEDDED_WORKER=0 \
+		PYTHONPATH=$(ROOT)/packages/api:$(ROOT)/packages/runner \
+		python3 -m formulaetl_api.worker
 
 web:
 	cd apps/web && npm run dev -- --host 0.0.0.0 --port 18766

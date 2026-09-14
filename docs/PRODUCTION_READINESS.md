@@ -20,7 +20,7 @@
 
 **Rule:** Demo fixtures, local CSV sidecars, and Jobs-API-shaped JSON files are **DEMO**. They are not production Snowflake, Kafka, S3, or Databricks.
 
-**Overall product today: DEMO** (designer + in-process toy runner). A few transforms and local file I/O are **ALPHA** for laptop-sized jobs. Nothing is **PRODUCTION**.
+**Overall product today: DEMO** (designer + fixture connectors). Control-plane bookkeeping (async runs, SQLite history, versions) is **ALPHA**. A few transforms and local file I/O are **ALPHA** for laptop-sized jobs. Nothing is **PRODUCTION**.
 
 ---
 
@@ -42,35 +42,35 @@ This is a **demo / laptop DAG**, not a data plane.
 `PipelineScheduler` (`packages/api/formulaetl_api/scheduler.py`):
 
 - 5-field cron parser (not crontab, not APScheduler, not Airflow).
-- File JSON under `data/schedules/` (`ScheduleStore`).
+- Schedules in SQLite (`schedules` table; legacy JSON migrated on boot).
 - **In-process daemon thread**, default poll 5s (`FORMULAETL_SCHEDULER_POLL`).
-- `tick()` fires `run_callback` **synchronously** under `_fire_lock`.
+- `tick()` **enqueues** a run via callback (does not block on `PipelineRunner`).
 - Comment in source: cloud HA scheduling is Enterprise later — **correct; not implemented**.
 
-Single API process. Restart can miss or double-fire around minute boundaries. No distributed lock, no queue, no misfire policy.
+Single API process by default (embedded worker). Restart no longer wipes run history (SQLite). No distributed lock / misfire policy.
 
 ### Run store and API locking
 
-`RunStore` (`packages/api/formulaetl_api/store.py`): **in-memory `dict[str, RunResult]`**. Process restart **wipes run history**. Pipelines persist as JSON files (`PipelineStore`).
+`RunStore` (`packages/api/formulaetl_api/store.py`): **SQLite** durable ledger (`runs`, `node_runs`, `run_events`, `job_queue`). Pipeline definitions + immutable `pipeline_versions` in the same DB (`data/formulaetl.db` by default).
 
 `packages/api/formulaetl_api/__init__.py`:
 
-- Global `_runner_lock` — **one pipeline run at a time** per process.
-- `POST /api/pipelines/{id}/run` **blocks** until the DAG finishes (not async worker).
+- **No** global `_runner_lock` — concurrent claimed jobs may run in parallel.
+- `POST /api/pipelines/{id}/run` returns **202** with `status=queued` + `pipeline_version_id`; worker executes async.
 - CORS `allow_origins=["*"]`, **no authentication**, no API keys.
-- Scheduler callback uses the same lock and the same in-memory run store.
+- Embedded worker thread by default (`FORMULAETL_EMBEDDED_WORKER=1`); standalone: `make worker`.
 
 ### Secrets in pipeline JSON
 
-Yes. Node `config` is stored verbatim in `data/pipelines/*.json` and bundled demos.
+Yes. Node `config` is stored in the version snapshot JSON (and previously in `data/pipelines/*.json`).
 
 - UI marks `password` / `token` / `passphrase` as `type: secret` (masked input only).
-- Values are still JSON on disk and returned by `GET /api/pipelines/{id}`.
-- No `${ENV}` interpolation, no vault, no secret refs.
+- Values are still returned by `GET /api/pipelines/{id}`.
+- No `${ENV}` interpolation, no vault, no secret refs beyond PGP key/passphrase refs.
 - Demo PGP node includes `"passphrase": ""` and a **path to a demo private key** in-repo (`fixtures/keys/`).
 - Live SFTP/Postgres/Snowflake/Databricks would put passwords/PATs in the same JSON.
 
-Unauthenticated API + secrets-in-JSON is a **hard production blocker**.
+Unauthenticated API + secrets-in-JSON remains a **hard production blocker**.
 
 ---
 
@@ -136,8 +136,9 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | Sequential DAG runner (`list[dict]` + full-object `bytes`) | DEMO | PRODUCTION (chunked/spill or worker data plane) | No | Default path yes | OOM; no restart; summed metrics lie | Design bounded batches; **do not claim Spark** |
 | Parallel / streaming runtime | DEMO (absent) | PRODUCTION | No | N/A | Kafka “source” is a finite pull | Separate stream design later; not this PR |
 | Pipeline JSON on disk | ALPHA | PRODUCTION (versioned, validated) | No | Demos yes | No migrations, no RBAC | Keep JSON; add schema + secret stripping |
-| Run store | DEMO | PRODUCTION | No | Yes | History gone on restart | Persist runs (SQLite/Postgres) |
-| API run locking | DEMO | DESIGN PARTNER | No | Yes | Global lock; sync HTTP | Per-pipeline lock + async jobs |
+| Run store | ALPHA (SQLite) | PRODUCTION | No | Demos yes | Local file DB; no Postgres yet | Optional Postgres later |
+| API run locking | ALPHA (async queue; no global lock) | DESIGN PARTNER | No | Yes | Embedded worker default | Split worker + auth |
+| Observability / lineage | ALPHA (durable events + node_runs) | PRODUCTION | No | Logs in SQLite | No retention policy | Structured export |
 | HTTP API (FastAPI) | DEMO | DESIGN PARTNER | No | Hosted UI without API | CORS `*`; no auth | Authn first |
 | Visual designer (Vite) | ALPHA | PRODUCTION UI | No (runtime not behind it) | UI can be static | Vercel ≠ ETL runtime | Keep UI; document API requirement |
 | Community cron scheduler | DEMO | DESIGN PARTNER (single node) | No | Yes | In-process poll; no HA | External cron or queue; not K8s operator yet |
@@ -160,7 +161,6 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | Secrets / vault | DEMO (none) | PRODUCTION | No | N/A | Secrets in JSON + public GET | Env/vault refs; redact API |
 | Auth / SSO / RBAC | DEMO (none) | ENTERPRISE / PRODUCTION | No | N/A | Open API | Token auth before any customer data |
 | Multi-instance HA | DEMO (absent) | ENTERPRISE | No | Single process | Duplicate scheduled runs | Control plane vs workers (see architecture note) |
-| Observability / lineage | DEMO (in-memory logs) | PRODUCTION | No | Logs in RunResult | No retention | Structured logs + persist |
 | Hosted production runtime | DEMO | PRODUCTION | No | Vercel UI only | README “K8s” is roadmap, not code | Docker API with DEMO=0 only after auth |
 | CI/CD gate | DEMO (no GHA) | PRODUCTION | No | Local pytest | `main` can break unnoticed | Add pytest + `npm run build` on PR |
 | Billing / marketplace / Talend importer / Spark / K8s operator | Absent (correct) | — | — | — | Feature expansion vs trust | **Do not build** (mission freeze) |

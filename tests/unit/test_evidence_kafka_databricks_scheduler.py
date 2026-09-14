@@ -135,66 +135,54 @@ def test_http_api_and_s3_sources_still_green(work_dir: Path):
 
 
 @pytest.fixture
-def api_client(monkeypatch):
+def api_client(monkeypatch, tmp_path: Path):
+    from tests.api_helpers import boot_api
+
+    api = boot_api(
+        monkeypatch,
+        work_dir=ROOT,
+        db_path=tmp_path / "evidence.db",
+        embedded_worker=True,
+        scheduler=False,
+    )
+    with TestClient(api.app) as c:
+        yield c, api
     from scripts.seed_demo import main
 
     main()
-    monkeypatch.setenv("FORMULAETL_WORK_DIR", str(ROOT))
-    monkeypatch.setenv("FORMULAETL_DEMO", "1")
-    monkeypatch.setenv("FORMULAETL_SCHEDULER", "0")
-
-    import importlib
-    import formulaetl_api
-    from formulaetl_api.store import PipelineStore, RunStore
-    from formulaetl_api.scheduler import ScheduleStore
-
-    importlib.reload(formulaetl_api)
-    formulaetl_api.WORK_DIR = ROOT
-    formulaetl_api.DEMO_MODE = True
-    formulaetl_api.pipelines = PipelineStore(ROOT / "data" / "pipelines")
-    formulaetl_api.schedules = ScheduleStore(ROOT / "data" / "schedules")
-    formulaetl_api.runs = RunStore()
-    formulaetl_api._scheduler = None
-
-    with TestClient(formulaetl_api.app) as c:
-        yield c
-
-    main()
 
 
-def test_scheduler_tick_creates_run_history(api_client: TestClient, tmp_path: Path):
-    import formulaetl_api
-    from formulaetl_api.scheduler import ScheduleStore
+def test_scheduler_tick_creates_run_history(api_client, tmp_path: Path):
+    from tests.api_helpers import wait_run
 
-    store = ScheduleStore(tmp_path / "schedules")
-    formulaetl_api.schedules = store
-    formulaetl_api._scheduler = None
+    api_client_http, api = api_client
 
-    assert api_client.get("/api/pipelines/demo-api-kafka-databricks").status_code == 200
+    assert (
+        api_client_http.get("/api/pipelines/demo-api-kafka-databricks").status_code
+        == 200
+    )
 
-    put = api_client.put(
+    put = api_client_http.put(
         "/api/pipelines/demo-api-kafka-databricks/schedule",
         json={"enabled": True, "cron": "* * * * *", "timezone": "UTC"},
     )
     assert put.status_code == 200
 
-    spec = store.get("demo-api-kafka-databricks")
+    spec = api.schedules.get("demo-api-kafka-databricks")
     assert spec is not None
     spec.next_run_at = 1.0
-    store.save(spec)
+    api.schedules.save(spec)
 
-    tick = api_client.post("/api/scheduler/tick")
+    tick = api_client_http.post("/api/scheduler/tick")
     assert tick.status_code == 200
     assert "demo-api-kafka-databricks" in tick.json()["fired"]
 
-    after = store.get("demo-api-kafka-databricks")
+    after = api.schedules.get("demo-api-kafka-databricks")
     assert after is not None
     assert after.last_run_id, "scheduler must record a real run_id"
-    assert after.last_status == "success"
+    assert after.last_status == "queued"
 
-    run = api_client.get(f"/api/runs/{after.last_run_id}")
-    assert run.status_code == 200
-    body = run.json()
+    body = wait_run(api_client_http, after.last_run_id, timeout_sec=60)
     assert body["status"] == "success"
     assert body["pipeline_id"] == "demo-api-kafka-databricks"
     assert body.get("logs"), "run history must include logs"
