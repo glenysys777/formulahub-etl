@@ -120,10 +120,18 @@ def test_schedule_api_put_get_and_tick(client: TestClient, tmp_path: Path):
     assert body["enabled"] is True
     assert body["cron"] == "* * * * *"
     assert body["next_run_at"] is not None
+    assert isinstance(body["next_run_at"], (int, float))
+    assert body["next_run_at"] > 0
 
     got = client.get("/api/pipelines/demo-api-kafka-databricks/schedule")
     assert got.status_code == 200
-    assert got.json()["enabled"] is True
+    got_body = got.json()
+    assert got_body["enabled"] is True
+    # Persisted + returned on GET (not compute-only ephemeral)
+    assert got_body["next_run_at"] == body["next_run_at"]
+    on_disk = store.get("demo-api-kafka-databricks")
+    assert on_disk is not None
+    assert on_disk.next_run_at == body["next_run_at"]
 
     # Force due: rewrite next_run_at into the past
     spec = store.get("demo-api-kafka-databricks")

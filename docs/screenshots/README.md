@@ -1,12 +1,13 @@
-# Founder / PR screenshots
+# Pre-merge screenshots (committed)
 
-Captured from the real app (`127.0.0.1:18766`) — original CSS/SVG icons only (no vendor trademark logos).
+Captured from the real app at `http://127.0.0.1:18766` — original CSS/SVG icons only (no vendor trademark logos).
 
 | File | Shows |
 |------|--------|
-| `01-palette-blank-canvas.webp` | Component palette + New blank + click-add onto canvas |
-| `02-kafka-databricks-canvas.webp` | Colorful Kafka → Field Mapper → Databricks Job nodes |
-| `03-schedule-ui.webp` | Schedule panel (enable / cron / timezone / save) |
-| `03-schedule-ui-full.webp` | Same schedule UI in full app chrome |
+| `01-palette-blank-drag-add.webp` | Component palette + New blank + click/drag-add onto canvas |
+| `02-kafka-databricks-nodes.webp` | Colorful Kafka → Field Mapper → Databricks Job nodes |
+| `03-run-logs-rows.webp` | Run with visible logs / rows (KafkaSource + DatabricksJob) |
+| `04-schedule-next-run-at.webp` | Schedule UI showing persisted `next_run_at` |
+| `04-schedule-next-run-at-full.webp` | Same schedule UI in full app chrome |
 
-PNG copies included for tooling that lacks WebP. Also mirrored under `/opt/cursor/artifacts/screenshots/`.
+PNG copies included. Mirrored under `/opt/cursor/artifacts/screenshots/`.

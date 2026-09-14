@@ -299,7 +299,7 @@ function AppCanvas() {
         setScheduleTz(sched.timezone || "UTC");
         setScheduleInfo(
           sched.enabled && sched.next_run_at
-            ? `Next: ${new Date(sched.next_run_at * 1000).toISOString()}`
+            ? `next_run_at: ${new Date(sched.next_run_at * 1000).toISOString()}`
             : sched.last_status
               ? `Last: ${sched.last_status}`
               : null,
@@ -503,7 +503,7 @@ function AppCanvas() {
       });
       setScheduleInfo(
         spec.enabled && spec.next_run_at
-          ? `Next: ${new Date(spec.next_run_at * 1000).toISOString()}`
+          ? `next_run_at: ${new Date(spec.next_run_at * 1000).toISOString()}`
           : "Schedule saved (disabled)",
       );
     } catch (e) {
@@ -815,7 +815,11 @@ function AppCanvas() {
                 >
                   {scheduleBusy ? "Saving…" : "Save schedule"}
                 </button>
-                {scheduleInfo && <p className="schedule-info">{scheduleInfo}</p>}
+                {scheduleInfo && (
+                  <p className="schedule-info" data-testid="schedule-next-run">
+                    {scheduleInfo}
+                  </p>
+                )}
                 <p className="schedule-note">
                   Community self-hosted scheduler. Cloud HA scheduling is a planned Enterprise lock.
                 </p>

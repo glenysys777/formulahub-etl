@@ -9,6 +9,10 @@ Client-ready copy for founders and GTM. All files are markdown — copy-paste in
 **Model:** Open-core — Community free · Cloud hosted *(planned)* · Enterprise SSO/RBAC/lineage *(planned)*.  
 **Stage:** MVP / demo-ready. Do **not** invent logos, revenue, or fake benchmarks.
 
+**Honesty — Kafka / Databricks:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default DEMO=1 use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
+**Honesty — Kafka / Databricks:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default `FORMULAETL_DEMO=1` use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
 **Local demo:** UI `http://127.0.0.1:18766` · API `http://127.0.0.1:18765`  
 **Verified (as of pack creation context):** 17 pytest passed · Playwright Run + AI Build OK · Goal verify PASS.
 

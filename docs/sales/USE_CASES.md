@@ -65,4 +65,7 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 
 ## How to talk to clients
 
+> **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default DEMO=1 use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
+
 > “We match the visual ETL jobs companies run now: **API read, Kafka read, S3 → Databricks job trigger, Field Mapper, schedule in one place**. AI Build is a shortcut — the palette and params stand alone. Demo mode mocks Kafka/Databricks so you can run without credentials. Community includes a self-hosted scheduler; HA cloud scheduling is a later Enterprise lock. We’re not claiming an embedded Spark engine or fabricated price lists.”

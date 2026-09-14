@@ -71,6 +71,7 @@ export type PipelineSchedule = {
   enabled: boolean;
   cron: string;
   timezone: string;
+  /** Epoch seconds — next scheduled fire (persisted by the API). */
   next_run_at?: number | null;
   last_run_at?: number | null;
   last_run_id?: string | null;

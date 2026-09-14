@@ -1,5 +1,13 @@
 # Kafka Source + Databricks Job Trigger
 
+## Honesty
+
+Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default DEMO=1 use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
+## Honesty (read first)
+
+Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default `FORMULAETL_DEMO=1` use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
 ## Demo (CI / local, no broker or workspace)
 
 ```bash

@@ -14,6 +14,12 @@ FormulaHub ETL is a drag-and-drop pipeline designer. Underneath, it generates an
 
 - **Visual canvas** — React Flow designer with colorful original SVG icons (no vendor trademark logos)
 - **Kafka Source + Databricks Job** — stream ingest and Jobs API orchestration (demo fixtures; optional live clients)
+
+> **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default DEMO=1 use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
+
+> **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default `FORMULAETL_DEMO=1` use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
 - **One-place scheduler** — Community self-hosted cron per pipeline (HA cloud scheduler = Enterprise later)
 - **Field Mapper** — discover schema from sources, drag column→column mappings, edit expressions
 - **AI Pipeline Builder** — describe a job in English; get a graph with mappings and Python Row stubs filled in

@@ -19,6 +19,10 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 | Excel Source | `excel_source` | `.xlsx` sheets; Discover schema supported |
 | HTTP / REST API Source | `http_api_source` | Demo fixture for example.com / `demo=true` |
 | **Kafka Source** | `kafka_source` | Demo → `fixtures/sample/kafka_orders.jsonl` when `FORMULAETL_DEMO=1` or brokers=`demo`. Live needs optional `formulaetl[kafka]` or `confluent-kafka` |
+
+> **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default DEMO=1 use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
+> **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default `FORMULAETL_DEMO=1` use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
 | SFTP Source | `sftp_source` | Demo copies fixtures into staging — **no real SFTP wire** |
 | Postgres Source | `postgres_source` | Demo → SQLite `data/demo.db` or fixture rows |
 | MySQL Source | `mysql_source` | Demo → SQLite; live needs PyMySQL + `FORMULAETL_DEMO=0` |
