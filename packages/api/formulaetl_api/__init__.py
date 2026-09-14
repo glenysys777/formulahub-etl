@@ -10,6 +10,10 @@ Phase F:
   - Reusable Connections + SecretProvider (env + encrypted local store)
   - Optional ``FORMULAETL_API_KEY`` gate (Community open when unset)
   - Pipeline/connection GET responses mask secret material
+
+Phase G:
+  - POST /api/pipelines/{id}/validate — structured preflight (graph, params, refs)
+  - GET /api/runs/{id} includes ``summary`` + clear node_runs / events
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from formulaetl_api.ai_builder import build_pipeline_from_text
 from formulaetl_api.db import STATUS_QUEUED, Database
 from formulaetl_api.scheduler import PipelineScheduler, ScheduleStore
 from formulaetl_api.store import ConnectionStore, PipelineStore, RunStore
+from formulaetl_api.validate import run_summary_from_detail, validate_pipeline_definition
 from formulaetl_api.worker import RunWorker
 
 WORK_DIR = Path(os.environ.get("FORMULAETL_WORK_DIR", Path(__file__).resolve().parents[2]))
@@ -207,6 +212,25 @@ class ConnectionUpdate(BaseModel):
     description: str | None = None
     config: dict[str, Any] | None = None
     secrets: dict[str, Any] | None = None
+
+
+class PipelineValidateBody(BaseModel):
+    """Optional unsaved canvas graph. When omitted, validates the stored pipeline."""
+
+    name: str | None = None
+    description: str | None = None
+    nodes: list[dict[str, Any]] | None = None
+    edges: list[dict[str, Any]] | None = None
+    metadata: dict[str, Any] | None = None
+
+
+def _secret_exists(ref: str) -> bool:
+    """True if a secret ref resolves — value is discarded (never returned)."""
+    try:
+        val = _secret_provider().get(ref)
+    except Exception:
+        return False
+    return val is not None and str(val) != ""
 
 
 def _ensure_demo_loaded(*, refresh: bool = False) -> None:
@@ -530,6 +554,47 @@ def get_pipeline_version(pipeline_id: str, version_id: str) -> dict[str, Any]:
     return data
 
 
+@app.post("/api/pipelines/{pipeline_id}/validate")
+def validate_pipeline(
+    pipeline_id: str, body: PipelineValidateBody | None = None
+) -> dict[str, Any]:
+    """Structured preflight: graph, required params, connection_id, secret refs, mappings.
+
+    Pass an optional body with ``nodes``/``edges`` to validate the current canvas
+    without saving. Never reveals secret values.
+    """
+    stored = pipelines.get(pipeline_id)
+    if not stored:
+        _ensure_demo_loaded()
+        stored = pipelines.get(pipeline_id)
+
+    if body is not None and body.nodes is not None:
+        pipeline = PipelineDefinition(
+            id=pipeline_id,
+            name=body.name or (stored.name if stored else pipeline_id),
+            description=body.description
+            if body.description is not None
+            else (stored.description if stored else ""),
+            nodes=body.nodes,
+            edges=body.edges if body.edges is not None else [],
+            metadata=body.metadata
+            if body.metadata is not None
+            else (stored.metadata if stored else {}),
+        )
+    else:
+        if not stored:
+            raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+        pipeline = stored
+
+    result = validate_pipeline_definition(
+        pipeline,
+        get_connection=connections.get,
+        secret_exists=_secret_exists,
+    )
+    result["pipeline_id"] = pipeline_id
+    return result
+
+
 @app.post("/api/pipelines/{pipeline_id}/run", response_model=RunResponse, status_code=202)
 def run_pipeline(pipeline_id: str, response: Response) -> RunResponse:
     """Enqueue a run. Returns quickly with 202 + ``queued``; worker executes async.
@@ -577,8 +642,26 @@ def get_run(run_id: str) -> dict[str, Any]:
     if not r:
         raise HTTPException(404, f"Run '{run_id}' not found")
     out = r.to_dict(include_detail=True)
-    out["node_runs"] = [n.to_dict() for n in runs.list_node_runs(run_id)]
-    out["events"] = [e.to_dict() for e in runs.list_events(run_id)]
+    node_runs = [n.to_dict() for n in runs.list_node_runs(run_id)]
+    events = [e.to_dict() for e in runs.list_events(run_id)]
+    out["node_runs"] = node_runs
+    out["events"] = events
+    # Ensure aggregate row counts / duration are always visible at top level
+    metrics = dict(out.get("metrics") or {})
+    if "rows_in" not in metrics and node_runs:
+        metrics["rows_in"] = sum(int(n.get("rows_in") or 0) for n in node_runs)
+        metrics["rows_out"] = sum(int(n.get("rows_out") or 0) for n in node_runs)
+        metrics["rows_rejected"] = sum(int(n.get("rows_rejected") or 0) for n in node_runs)
+    if out.get("duration_ms") in (None, 0) and metrics.get("duration_ms"):
+        out["duration_ms"] = metrics["duration_ms"]
+    out["metrics"] = metrics
+    out["summary"] = run_summary_from_detail(
+        status=out.get("status") or r.status,
+        metrics=metrics,
+        duration_ms=float(out.get("duration_ms") or 0.0),
+        node_runs=node_runs,
+        events=events,
+    )
     return out
 
 

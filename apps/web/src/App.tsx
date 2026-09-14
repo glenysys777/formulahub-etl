@@ -23,6 +23,7 @@ import {
   type PipelineEdge,
   type PipelineNode,
   type RunStatus,
+  type ValidateResult,
 } from "./api";
 import { EtlNode, ComponentGlyph, categoryForType, CAT_COLORS, type EtlNodeData, type RunVisual } from "./EtlNode";
 import { NodeInspector, missingRequiredKeys } from "./NodeInspector";
@@ -223,6 +224,7 @@ function AppCanvas() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [run, setRun] = useState<RunStatus | null>(null);
+  const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiOk, setApiOk] = useState(false);
@@ -586,6 +588,35 @@ function AppCanvas() {
     }
   };
 
+  const onValidate = async () => {
+    if (!pipeline) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = fromFlow(pipeline, nodes, edges);
+      const result = await api.validatePipeline(pipeline.id, {
+        name: updated.name,
+        description: updated.description,
+        nodes: updated.nodes,
+        edges: updated.edges,
+        metadata: updated.metadata,
+      });
+      setValidateResult(result);
+      if (!result.ok) {
+        const errs = result.checks
+          .filter((c) => c.severity === "error")
+          .slice(0, 5)
+          .map((c) => `${c.symbol || "✗"} ${c.node_id ? c.node_id + ": " : ""}${c.message}`);
+        setError(`Validate failed (${result.summary.errors} error(s)):\n${errs.join("\n")}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setValidateResult(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const updateSelectedConfig = (key: string, value: unknown) => {
     if (!selected) return;
     setNodes((nds) =>
@@ -653,6 +684,16 @@ function AppCanvas() {
             disabled={busy}
           >
             Load demo
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-testid="validate-pipeline"
+            onClick={onValidate}
+            disabled={busy || !pipeline}
+            title={pipeline ? "Preflight validate (graph, params, refs)" : "Load a pipeline first"}
+          >
+            Validate
           </button>
           <button
             type="button"
@@ -845,15 +886,21 @@ function AppCanvas() {
                 <div className="metrics-grid">
                   <div className="metric">
                     <div className="metric-label">Rows in</div>
-                    <div className="metric-value accent">{metrics.rows_in ?? "—"}</div>
+                    <div className="metric-value accent">
+                      {run.summary?.rows_in ?? metrics.rows_in ?? "—"}
+                    </div>
                   </div>
                   <div className="metric">
                     <div className="metric-label">Rows out</div>
-                    <div className="metric-value ok">{metrics.rows_out ?? "—"}</div>
+                    <div className="metric-value ok">
+                      {run.summary?.rows_out ?? metrics.rows_out ?? "—"}
+                    </div>
                   </div>
                   <div className="metric">
                     <div className="metric-label">Rejected</div>
-                    <div className="metric-value warn">{metrics.rows_rejected ?? "—"}</div>
+                    <div className="metric-value warn">
+                      {run.summary?.rows_rejected ?? metrics.rows_rejected ?? "—"}
+                    </div>
                   </div>
                   <div className="metric">
                     <div className="metric-label">Duration</div>
@@ -862,11 +909,95 @@ function AppCanvas() {
                     </div>
                   </div>
                 </div>
+                {run.node_runs && run.node_runs.length > 0 && (
+                  <div className="node-runs" data-testid="node-runs" style={{ marginTop: "0.65rem" }}>
+                    <div
+                      style={{
+                        fontSize: "0.68rem",
+                        color: "var(--text-muted)",
+                        marginBottom: 4,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      Nodes
+                    </div>
+                    {run.node_runs.map((nr, i) => (
+                      <div
+                        key={String(nr.node_id || i)}
+                        style={{
+                          fontSize: "0.72rem",
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          gap: 4,
+                          padding: "2px 0",
+                          borderBottom: "1px solid var(--border, #e5e5e5)",
+                        }}
+                      >
+                        <span>
+                          <span className={`status-pill ${nr.status || ""}`} style={{ fontSize: "0.6rem" }}>
+                            {nr.status || "—"}
+                          </span>{" "}
+                          {nr.node_id}
+                          {nr.component_type ? (
+                            <span style={{ color: "var(--text-muted)" }}> · {nr.component_type}</span>
+                          ) : null}
+                        </span>
+                        <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          {nr.rows_in ?? 0}→{nr.rows_out ?? 0}
+                          {(nr.rows_rejected ?? 0) > 0 ? ` ✗${nr.rows_rejected}` : ""}
+                          {nr.duration_ms != null ? ` · ${Math.round(Number(nr.duration_ms))}ms` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {run.events && run.events.length > 0 && (
+                  <div className="run-events" data-testid="run-events" style={{ marginTop: "0.55rem" }}>
+                    <div
+                      style={{
+                        fontSize: "0.68rem",
+                        color: "var(--text-muted)",
+                        marginBottom: 4,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      Events ({run.summary?.event_count ?? run.events.length})
+                    </div>
+                    {run.events.slice(-6).map((ev, i) => (
+                      <div key={i} style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                        {ev.from_status || "—"} → {ev.to_status || "—"}
+                        {ev.message ? ` · ${ev.message}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             ) : (
               <p className="empty-hint">Run the pipeline to see metrics.</p>
             )}
           </div>
+
+          {validateResult && (
+            <div className="sidebar-section" data-testid="validate-panel">
+              <h3>Validate {validateResult.ok ? "✓" : "✗"}</h3>
+              <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 0 }}>
+                {validateResult.summary.errors} error(s), {validateResult.summary.warnings} warning(s)
+              </p>
+              <div style={{ maxHeight: 180, overflow: "auto" }}>
+                {validateResult.checks
+                  .filter((c) => c.severity !== "ok")
+                  .concat(validateResult.checks.filter((c) => c.severity === "ok").slice(0, 3))
+                  .map((c, i) => (
+                    <div key={i} style={{ fontSize: "0.72rem", marginBottom: 4 }}>
+                      {c.symbol || ""} {c.node_id ? `${c.node_id}: ` : ""}
+                      {c.message}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
 
           <div className="sidebar-section logs-panel" data-testid="logs-panel">
             <h3>Logs</h3>

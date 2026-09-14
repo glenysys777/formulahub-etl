@@ -39,13 +39,59 @@ export type RunStatus = {
     | "timed_out"
     | string;
   pipeline_version_id?: string;
-  node_runs?: Array<Record<string, unknown>>;
-  events?: Array<Record<string, unknown>>;
+  node_runs?: Array<{
+    node_id?: string;
+    component_type?: string;
+    status?: string;
+    rows_in?: number;
+    rows_out?: number;
+    rows_rejected?: number;
+    duration_ms?: number;
+    error?: string | null;
+    [key: string]: unknown;
+  }>;
+  events?: Array<{
+    event_type?: string;
+    from_status?: string | null;
+    to_status?: string | null;
+    message?: string | null;
+    ts?: number;
+    [key: string]: unknown;
+  }>;
+  summary?: {
+    status?: string;
+    nodes_total?: number;
+    nodes_success?: number;
+    nodes_failed?: number;
+    rows_in?: number;
+    rows_out?: number;
+    rows_rejected?: number;
+    duration_ms?: number;
+    event_count?: number;
+  };
   metrics: Record<string, number>;
   node_metrics: Record<string, Record<string, number>>;
   logs: string[];
   error?: string | null;
   duration_ms?: number;
+};
+
+export type ValidateCheck = {
+  code: string;
+  severity: "ok" | "warn" | "error" | string;
+  symbol?: string;
+  message: string;
+  node_id?: string;
+  edge_id?: string;
+  keys?: string[];
+  connection_id?: string;
+};
+
+export type ValidateResult = {
+  ok: boolean;
+  pipeline_id?: string;
+  checks: ValidateCheck[];
+  summary: { errors: number; warnings: number; ok: number };
 };
 
 export type ParamDef = {
@@ -113,6 +159,14 @@ export const api = {
     req<Pipeline>(`/api/pipelines/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   runPipeline: (id: string) =>
     req<{ run_id: string; status: string }>(`/api/pipelines/${id}/run`, { method: "POST" }),
+  validatePipeline: (
+    id: string,
+    body?: Partial<Pick<Pipeline, "name" | "description" | "nodes" | "edges" | "metadata">>,
+  ) =>
+    req<ValidateResult>(`/api/pipelines/${id}/validate`, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
   getRun: (id: string) => req<RunStatus>(`/api/runs/${id}`),
   aiBuild: (description: string, name?: string) =>
     req<Pipeline>("/api/ai/build", {
