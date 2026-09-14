@@ -5,7 +5,7 @@ Claims in sales/README are **not** evidence. Each row is a statement we are will
 **Audit SHA (main / Phase A merge):** `cecb1af` (PR #4)  
 **Phase B merge tip:** `f2d8b57`  
 **Phase C merge tip:** `dce51a6`  
-**Phase D+E branch tip:** `62c0c05` (impl `5d719a7`)  
+**Phase D+E branch tip:** `4fa3d21` (impl `5d719a7`)  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
@@ -18,7 +18,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
 | A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | **133 passed**, 1 skipped (`RUN_CSV_1M`), warnings (pgpy). Includes Phase D+E async/durable tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
-| A2 | Web production build | PROVEN **poll UI only** | `npm run build` in `apps/web` | Poll loop accepts `queued`; no layout redesign | this PR | 2026-09-14 |
+| A2 | Web production build | PROVEN | `cd apps/web && npm install && npm run build` | **vite build OK** (175 modules). Poll loop accepts `queued`; no layout redesign. | this PR | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` | PROVEN **absent** | `ls .github/workflows` | Still no workflow files | `cecb1af` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
 | A5 | CSV 10K streaming benchmark | PROVEN | Phase C | Unchanged | `dce51a6` | 2026-09-14 |
@@ -29,7 +29,8 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| B1 | Flagship S3→PGP→Snowflake **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | CLI still sync in-process; API path is async+SQLite | this PR | 2026-09-14 |
+| B1 | Flagship S3→PGP→Snowflake **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | `status=success` (~119ms). CLI still sync in-process; API path is async+SQLite. | this PR | 2026-09-14 |
+| B1b | Excel + API-map demos | PROVEN **demo only** | CLI run excel-to-file + api-map-transform | Both `status=success` on this PR | this PR | 2026-09-14 |
 | B2–B4 | Other demos / screenshots | PROVEN **demo only** | pytest / CLI | Unchanged intent | `dce51a6` | 2026-09-14 |
 
 ---
