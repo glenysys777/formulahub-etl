@@ -18,7 +18,23 @@ Enterprise Databricks flows need the same SQL or job params to run across **DEV 
 
 Secret fields (`token`, `password`, …) are skipped by the interpolator; resolve them via `env:…` / `secret:…` / Connections first.
 
-## Job Contexts on a pipeline
+## Studio: Job Contexts panel
+
+In **FormulaHub Studio** (`apps/web`), open a pipeline and use the right-rail **Job Contexts** accordion (pipeline-level — not buried only inside a Databricks node):
+
+1. **Active context** dropdown — switch DEV / QA / PROD (or any sets you add).
+2. **Key–value table** for the active set — add / edit / delete rows (`env`, `catalog`, `schema`, …).
+3. **Add / Duplicate / Rename / Delete** context sets.
+4. **Run params** — edit common `run_date` and `job_name` (same `metadata.run_params` used at run time).
+5. Changes update pipeline metadata in React state and persist via **Save** / auto-save (same path as schedule and other metadata).
+
+If a pipeline has no contexts yet, Studio seeds **DEV / QA / PROD** with empty starter keys (`env`, `catalog`, `schema`) so founders can fill values without editing JSON.
+
+**Databricks SQL / Job** node inspector still has **Variables**: active-context switch + resolved `${…}` preview. Both panels read/write the same `metadata.contexts` / `metadata.run_params`.
+
+Help copy in Studio: *Environment parameters for this pipeline. Use `${context.key}` in Databricks SQL / Job params. Tokens stay in Connections / secrets.*
+
+## Job Contexts on a pipeline (JSON shape)
 
 ```json
 {
@@ -38,7 +54,7 @@ Secret fields (`token`, `password`, …) are skipped by the interpolator; resolv
 }
 ```
 
-- Switch active context in Studio (Databricks SQL / Job inspector) or at run time:
+- Switch active context in Studio (Job Contexts rail or Databricks SQL / Job inspector) or at run time:
 
 ```bash
 FORMULAETL_CONTEXT=QA FORMULAETL_DEMO=1 python -m formulaetl.cli run demos/api-databricks-sql/pipeline.json

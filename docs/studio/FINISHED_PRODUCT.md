@@ -28,6 +28,7 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 | SFTP / Postgres / MySQL / SQLite Destination | DEMO mocks or local DB | DEMO / ALPHA |
 | Archive Files / Logger | Move inputs; metrics | ALPHA |
 | Scheduler | In-process cron per pipeline | DEMO / ALPHA |
+| **Job Contexts** | Right-rail DEV/QA/PROD key–value + run_params; Studio editor (no JSON) | ALPHA |
 | Studio chrome | Collapsible inspector, type-to-place, status `work_dir`, Save / Export | ALPHA |
 | Project files | Mirror JSON under `{work_dir}/pipelines/`; export JSON/zip | ALPHA |
 | Desktop shell | Electron: spawn/reuse API + Studio window; Mac `.app` via `dist:mac` / mac-pack | ALPHA |
@@ -43,6 +44,7 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 - Status bar: `workspace on this machine · {work_dir}`
 - Projects + Git → see `PROJECTS_AND_GIT.md`
 - Desktop: double-click **FormulaHub Studio.app** → API + Studio window (browser is optional menu item)
+- **Job Contexts** (right rail): DEV/QA/PROD key–value editor + `run_date` / `job_name`; same metadata as Databricks Variables preview — see `docs/CONTEXTS.md`
 
 ## Explicitly not in this wave
 
