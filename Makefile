@@ -1,4 +1,4 @@
-.PHONY: install seed test demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks api worker web build docker-up docker-down lint
+.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks api worker web build docker-up docker-down lint
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -13,7 +13,30 @@ seed:
 	python3 scripts/seed_demo.py
 
 test: seed
-	python3 -m pytest tests -v --tb=short -m "not live"
+	python3 -m pytest tests -v --tb=short -m "not live and not bench"
+
+test-fast: seed
+	python3 -m pytest tests -q --tb=short -m "not live and not bench and not slow"
+
+# LOCAL/DEMO wedge scale benches (10K/100K/1M). Never LIVE_CLOUD.
+# Optional 10M: BENCH_INCLUDE_10M=1 make bench-10m
+bench: seed
+	RUN_BENCH=1 FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 scripts/local_wedge_bench.py --require-run-bench \
+		--scales 10000,100000,1000000 \
+		--source s3 --dest snowflake \
+		--out data/out/bench/local_wedge_results.json
+
+bench-pytest: seed
+	RUN_BENCH=1 FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 -m pytest tests/bench -v --tb=short -m bench -s
+
+bench-10m: seed
+	RUN_BENCH=1 BENCH_INCLUDE_10M=1 FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 scripts/local_wedge_bench.py --require-run-bench \
+		--scales 10000000 --timebox-s 3600 \
+		--source s3 --dest snowflake \
+		--out data/out/bench/local_wedge_10m.json
 
 demo: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
