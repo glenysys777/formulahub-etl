@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ComponentInfo, ParamDef } from "./api";
+import { VariablesPanel } from "./VariablesPanel";
 
 function friendlyNodeId(nodeId: string, componentType: string, _label?: string): string {
   const raw = (nodeId || "").trim();
@@ -23,8 +24,10 @@ type Props = {
   label: string;
   config: Record<string, unknown>;
   component?: ComponentInfo;
+  metadata?: Record<string, unknown> | null;
   onChange: (key: string, value: unknown) => void;
   onConfigReplace: (config: Record<string, unknown>) => void;
+  onMetadataChange?: (metadata: Record<string, unknown>) => void;
 };
 
 function isEmpty(value: unknown): boolean {
@@ -127,8 +130,10 @@ export function NodeInspector({
   label,
   config,
   component,
+  metadata,
   onChange,
   onConfigReplace,
+  onMetadataChange,
 }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [jsonDraft, setJsonDraft] = useState("");
@@ -169,7 +174,11 @@ export function NodeInspector({
         ? "Field Mapper is column logic — Input columns, Variables (named expressions in the middle), and Output mappings. To merge two tables first, use Lookup Join."
         : componentType === "column_map"
           ? "Schema Map renames columns. For Variables and expressions, use Field Mapper."
-          : null;
+          : componentType === "databricks_sql"
+            ? "Run SQL on a Databricks SQL Warehouse. Use ${run_date}, ${context.env}, ${upstream.field} — preview resolves against the active Job Context without executing live. DEMO writes a local sidecar; LIVE is UNPROVEN until credentials."
+            : componentType === "databricks_job"
+              ? "Trigger a Databricks Job. Notebook/python param values accept ${…} variables. DEMO sidecar only until live token + workspace."
+              : null;
 
   return (
     <div className="inspector">
@@ -195,6 +204,13 @@ export function NodeInspector({
           {tip}
         </div>
       )}
+
+      <VariablesPanel
+        componentType={componentType}
+        config={config}
+        metadata={metadata}
+        onMetadataChange={onMetadataChange}
+      />
 
       {missing.length > 0 && (
         <div className="inspector-warn" data-testid="missing-params">
@@ -252,7 +268,12 @@ export function NodeInspector({
               );
             }
 
-            if (param.type === "string_list" || (param.type === "string" && typeof config[param.key] === "object")) {
+            if (
+              param.type === "string_list" ||
+              param.key === "sql" ||
+              (param.type === "string" && typeof config[param.key] === "object")
+            ) {
+              const isSql = param.key === "sql";
               return (
                 <div className={fieldClass} key={param.key}>
                   <label>
@@ -260,9 +281,17 @@ export function NodeInspector({
                     {param.required ? " *" : ""}
                   </label>
                   <textarea
-                    rows={param.type === "string_list" ? 3 : 5}
+                    rows={isSql ? 6 : param.type === "string_list" ? 3 : 5}
                     value={String(value)}
-                    placeholder={param.type === "string_list" ? "one per line" : undefined}
+                    placeholder={
+                      isSql
+                        ? param.placeholder || "SELECT … WHERE dt = '${run_date}'"
+                        : param.type === "string_list"
+                          ? "one per line · values may use ${…}"
+                          : undefined
+                    }
+                    spellCheck={false}
+                    data-testid={isSql ? "sql-editor" : undefined}
                     onChange={(e) =>
                       onChange(param.key, parseFieldValue(param, e.target.value, config[param.key]))
                     }

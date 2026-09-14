@@ -26,11 +26,14 @@ def test_kafka_and_databricks_registered():
     types = {c["type"] for c in list_components()}
     assert "kafka_source" in types
     assert "databricks_job" in types
+    assert "databricks_sql" in types
     by = {c["type"]: c for c in list_components()}
     kkeys = {p["key"] for p in by["kafka_source"]["parameters"]}
     assert {"brokers", "topic", "group_id", "format", "security"}.issubset(kkeys)
     dkeys = {p["key"] for p in by["databricks_job"]["parameters"]}
     assert {"workspace_host", "job_id", "token", "wait_for_completion"}.issubset(dkeys)
+    skeys = {p["key"] for p in by["databricks_sql"]["parameters"]}
+    assert {"workspace_host", "sql", "warehouse_id"}.issubset(skeys)
 
 
 def test_kafka_source_demo_fixture(work_dir: Path):

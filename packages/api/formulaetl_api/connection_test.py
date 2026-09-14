@@ -17,7 +17,13 @@ def test_connection_config(
     """Attempt a minimal live check. Never includes secret values in the result."""
     kind = str(kind).lower()
     demo_env = demo_mode or os.environ.get("FORMULAETL_DEMO", "1") == "1"
-    host = str(config.get("host") or config.get("account") or config.get("url") or "")
+    host = str(
+        config.get("host")
+        or config.get("workspace_host")
+        or config.get("account")
+        or config.get("url")
+        or ""
+    )
     host_l = host.lower()
 
     if demo_env and (
@@ -26,6 +32,7 @@ def test_connection_config(
         or config.get("demo") is True
         or (kind == "s3" and str(config.get("bucket") or "demo") in ("demo", ""))
         or (kind == "snowflake" and not config.get("account"))
+        or (kind == "databricks" and not config.get("token"))
     ):
         return {
             "ok": True,
@@ -45,6 +52,16 @@ def test_connection_config(
             return _test_snowflake(config)
         if kind == "http":
             return _test_http(config)
+        if kind == "databricks":
+            return {
+                "ok": False,
+                "mode": "live",
+                "kind": "databricks",
+                "message": (
+                    "LIVE Databricks connection test UNPROVEN in Community — "
+                    "configure workspace_host + token and validate outside CI"
+                ),
+            }
         return {"ok": False, "mode": "live", "kind": kind, "message": f"Unknown kind '{kind}'"}
     except Exception as exc:
         return {

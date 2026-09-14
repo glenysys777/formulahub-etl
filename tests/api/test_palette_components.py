@@ -62,6 +62,7 @@ def test_components_endpoint_has_palette_essentials(client: TestClient):
 
     assert by_type["kafka_source"]["display_name"] == "Kafka Source"
     assert by_type["databricks_job"]["display_name"] == "Databricks Job"
+    assert by_type["databricks_sql"]["display_name"] == "Databricks SQL"
     assert by_type["tmap"]["display_name"] == "Field Mapper"
     assert by_type["s3_source"]["display_name"] == "S3 Source"
 

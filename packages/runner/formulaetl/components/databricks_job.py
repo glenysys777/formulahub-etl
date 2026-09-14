@@ -12,6 +12,7 @@ from typing import Any
 from formulaetl.sdk.base import BaseComponent
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
+from formulaetl.sdk.vars import resolve_map_values, scope_from_context
 
 
 def _parse_map(raw: Any) -> dict[str, str]:
@@ -53,6 +54,9 @@ class DatabricksJob(BaseComponent):
 
     Demo mode writes a sidecar JSON under data/out/databricks_demo/ — no real workspace.
     This is orchestration (“call their job / notebook”), not an embedded Spark runtime.
+
+    ``notebook_params`` / ``python_params`` values support ``${context.*}``,
+    ``${run.*}``, ``${env.*}``, ``${upstream.*}``, and plain ``${key}``.
     """
 
     component_type = "databricks_job"
@@ -69,10 +73,10 @@ class DatabricksJob(BaseComponent):
             "token": {"type": "string", "description": "Personal access token (live mode)"},
             "job_id": {"type": "string", "description": "Databricks job id"},
             "notebook_params": {
-                "description": "Notebook parameters as map / JSON / key=value lines",
+                "description": "Notebook parameters as map / JSON / key=value lines (${…} ok)",
             },
             "python_params": {
-                "description": "Python task parameters as map / JSON / key=value lines",
+                "description": "Python task parameters as map / JSON / key=value lines (${…} ok)",
             },
             "wait_for_completion": {"type": "boolean", "default": True},
             "poll_interval_sec": {"type": "number", "default": 5},
@@ -111,14 +115,14 @@ class DatabricksJob(BaseComponent):
             "label": "Notebook params",
             "type": "string_list",
             "required": False,
-            "help": "One key=value per line (passed as notebook_params)",
+            "help": "key=value per line; values may use ${run_date}, ${context.env}, …",
         },
         {
             "key": "python_params",
             "label": "Python params",
             "type": "string_list",
             "required": False,
-            "help": "One key=value per line (passed as python_params)",
+            "help": "key=value per line; values may use ${…} variables",
         },
         {
             "key": "wait_for_completion",
@@ -203,8 +207,10 @@ class DatabricksJob(BaseComponent):
             "triggered_at": ts,
             "run_page_url": f"{host.rstrip('/')}/#job/{job_id}/run/{run_id}",
             "note": (
-                "Demo mode — Jobs API–shaped sidecar (no real workspace call). "
-                "Set FORMULAETL_DEMO=0 and provide workspace_host + token for live /api/2.1/jobs/run-now."
+                "DEMO mode — Jobs API–shaped sidecar (no real workspace call). "
+                "LIVE Databricks Jobs remain UNPROVEN until workspace_host + token "
+                "are set and FORMULAETL_DEMO=0. "
+                "notebook_params values support ${context.*} / ${run.*} / ${env.*}."
             ),
         }
         out_path = out_dir / f"job_{job_id}_{ts}_{run_id}.json"
@@ -316,6 +322,11 @@ class DatabricksJob(BaseComponent):
             rows = rows or []
             notebook_params = _parse_map(self.config.get("notebook_params"))
             python_params = _parse_map(self.config.get("python_params"))
+            # Resolve ${…} in param *values* (runner may already have done this;
+            # re-resolve keeps unit tests / direct run() correct).
+            scope = scope_from_context(ctx, upstream_rows=rows)
+            notebook_params = resolve_map_values(notebook_params, scope)
+            python_params = resolve_map_values(python_params, scope)
             # Pass row count / sample hint into notebook params when not set
             if rows and "row_count" not in notebook_params:
                 notebook_params = {**notebook_params, "row_count": str(len(rows))}

@@ -59,7 +59,8 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 | Local File Destination | `local_file_destination` | CSV / JSON paths under `data/out/` |
 | Excel Destination | `excel_destination` | Write `.xlsx` |
 | Snowflake Destination | `snowflake_destination` | Demo → filesystem mock; real needs warehouse creds |
-| **Databricks Job** | `databricks_job` | Orchestration: trigger Jobs API run (workspace + token + job_id). Demo → sidecar JSON under `data/out/databricks_demo/`. **Not** an embedded Spark engine |
+| **Databricks Job** | `databricks_job` | Orchestration: trigger Jobs API run (workspace + token + job_id). Demo → sidecar JSON under `data/out/databricks_demo/`. Notebook/python param values support `${…}`. **Not** an embedded Spark engine |
+| **Databricks SQL** | `databricks_sql` | Run SQL on a SQL Warehouse (Statement Execution API). `${context.*}` / `${run.*}` / `${upstream.*}` resolved before submit. Demo → sidecar under `data/out/databricks_sql_demo/` with `sql_resolved`. **LIVE UNPROVEN** until credentials |
 | SFTP Destination | `sftp_destination` | Demo → `data/out/sftp_mock/` — **no real upload** |
 | Postgres Destination | `postgres_destination` | Demo → SQLite + CSV under `data/out/postgres_demo/` |
 | MySQL Destination | `mysql_destination` | Demo → SQLite pattern |
@@ -129,7 +130,7 @@ What data engineers expect when mapping columns:
 |-----|--------|
 | Advanced multi-output visual mapper IDE | Field Mapper 3-pane (Input/Variables/Output) shipped; multi-output reject tabs later |
 | Spark / Big Data batch engine | Explicitly out of Community MVP — use **Databricks Job** to trigger *their* jobs |
-| Joblets, shared contexts, enterprise lineage UI | Enterprise tier *(planned)* |
+| Joblets, shared contexts, enterprise lineage UI | **Job Contexts** (`metadata.contexts` + `${…}`) shipped for Databricks SQL/Job — see [CONTEXTS.md](../CONTEXTS.md). Joblets / lineage UI still Enterprise *(planned)* |
 | Full JDBC catalog (Oracle, SQL Server, …) | After Postgres / MySQL pattern |
 | Salesforce / SAP / mainframe | Later |
 | Cloud HA multi-node scheduler | Enterprise / paid *(planned)* — Community ships self-hosted poller |
@@ -141,15 +142,16 @@ What data engineers expect when mapping columns:
 
 1. **Kafka → Databricks** — `demos/api-kafka-databricks` (fixture Kafka → Field Mapper → Databricks Job demo)
 2. **S3 → Databricks** — `demos/s3-databricks` (S3 mock → Databricks Job trigger)
-3. **Lookup + Variables** — `demos/lookup-join-mapper` — two CSV sources → Lookup Join → Field Mapper (Variables) → File
-4. **Core path** — Excel → Field Mapper → Filter → Sort → Aggregate → File
-5. `demos/excel-to-file` — Excel → Schema Map → Transform → File  
-6. `demos/python-row-flex` — API → map → Python Row → File  
-7. `demos/s3-pgp-snowflake` — S3 → PGP → Validate → Snowflake demo → Archive  
-8. Existing Excel, SFTP, Postgres, API demos under `demos/`
+3. **API → Databricks SQL** — `demos/api-databricks-sql` (API → SQL with `${run_date}` / `${context.env}` + Job Contexts)
+4. **Lookup + Variables** — `demos/lookup-join-mapper` — two CSV sources → Lookup Join → Field Mapper (Variables) → File
+5. **Core path** — Excel → Field Mapper → Filter → Sort → Aggregate → File
+6. `demos/excel-to-file` — Excel → Schema Map → Transform → File  
+7. `demos/python-row-flex` — API → map → Python Row → File  
+8. `demos/s3-pgp-snowflake` — S3 → PGP → Validate → Snowflake demo → Archive  
+9. Existing Excel, SFTP, Postgres, API demos under `demos/`
 
 ## Open-core honesty
 
-- **OSS core stays:** visual canvas, runner, Field Mapper Variables, Lookup Join, Kafka Source, Databricks Job orchestration, Community scheduler, AI Build shortcut  
+- **OSS core stays:** visual canvas, runner, Field Mapper Variables, Lookup Join, Kafka Source, Databricks Job + Databricks SQL orchestration, Job Contexts / `${…}`, Community scheduler, AI Build shortcut  
 - **Enterprise locks later *(planned)*:** SSO, RBAC, lineage UI, HA scheduler — no fabricated prices  
 - Icons are **original SVG/CSS** with text labels (S3 Source, Kafka Source, Databricks Job) — never official AWS / Kafka / Databricks trademark logo assets

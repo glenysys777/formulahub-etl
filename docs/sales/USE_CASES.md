@@ -42,6 +42,7 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 | `postgres_destination` | Writes SQLite + CSV under `data/out/postgres_demo/` | real DSN + `FORMULAETL_DEMO=0` |
 | `kafka_source` | Reads `fixtures/sample/kafka_orders.jsonl` — **no broker** | brokers + topic; optional `pip install formulaetl[kafka]` or `confluent-kafka` |
 | `databricks_job` | Writes SUCCESS sidecar under `data/out/databricks_demo/` | workspace_host + token + job_id + `FORMULAETL_DEMO=0` |
+| `databricks_sql` | Writes SUCCEEDED sidecar + `sql_resolved` under `data/out/databricks_sql_demo/` | workspace_host + token + warehouse_id + `FORMULAETL_DEMO=0` |
 
 ## Partial / params-only today
 

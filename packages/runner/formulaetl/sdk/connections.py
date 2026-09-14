@@ -20,7 +20,7 @@ from formulaetl.sdk.secrets import (
 )
 
 # Wedge kinds for Customer #1 connectors.
-CONNECTION_KINDS = frozenset({"sftp", "s3", "snowflake", "postgres", "http"})
+CONNECTION_KINDS = frozenset({"sftp", "s3", "snowflake", "postgres", "http", "databricks"})
 
 # Non-secret fields accepted per kind (others allowed but not validated strictly).
 KIND_PUBLIC_FIELDS: dict[str, frozenset[str]] = {
@@ -35,6 +35,9 @@ KIND_PUBLIC_FIELDS: dict[str, frozenset[str]] = {
     ),
     "postgres": frozenset({"host", "port", "database", "user", "dbname", "dsn"}),
     "http": frozenset({"base_url", "url", "timeout_sec", "headers"}),
+    "databricks": frozenset(
+        {"workspace_host", "warehouse_id", "http_path", "job_id", "catalog", "schema"}
+    ),
 }
 
 KIND_SECRET_FIELDS: dict[str, frozenset[str]] = {
@@ -43,6 +46,7 @@ KIND_SECRET_FIELDS: dict[str, frozenset[str]] = {
     "snowflake": frozenset({"password"}),
     "postgres": frozenset({"password"}),
     "http": frozenset({"auth_bearer", "token", "api_key", "password"}),
+    "databricks": frozenset({"token"}),
 }
 
 # Map component_type → expected connection kind (for soft validation).
@@ -54,6 +58,8 @@ COMPONENT_CONNECTION_KIND: dict[str, str] = {
     "postgres_source": "postgres",
     "postgres_destination": "postgres",
     "http_api_source": "http",
+    "databricks_job": "databricks",
+    "databricks_sql": "databricks",
 }
 
 
