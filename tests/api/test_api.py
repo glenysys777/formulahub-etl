@@ -73,6 +73,7 @@ def test_list_components(client: TestClient):
         "mysql_destination",
         "kafka_source",
         "databricks_job",
+        "databricks_sql",
     ):
         assert required in types
     by_type = {c["type"]: c for c in body}

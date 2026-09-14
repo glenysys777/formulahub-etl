@@ -33,11 +33,15 @@ curl -s http://127.0.0.1:8000/api/connections \
   }' | jq .
 ```
 
-Kinds: `sftp`, `s3`, `snowflake`, `postgres`, `http`.
+Kinds: `sftp`, `s3`, `snowflake`, `postgres`, `http`, `databricks`.
 
 - `GET /api/connections` / `GET /api/connections/{id}` — **secrets masked** (refs like `env:…` / `secret:…` are returned; plaintext never is).
 - `POST /api/connections/{id}/test` — demo hosts succeed under `FORMULAETL_DEMO=1`; live checks use real libraries when credentials point at real systems.
 - `PUT` with `"password": "***"` keeps the previous secret.
+
+## Job Contexts + `${…}` in SQL / params
+
+Named DEV/QA/PROD (or custom) variable sets live on `pipeline.metadata.contexts`. Databricks SQL and Job nodes resolve `${context.*}`, `${run.*}`, `${env.*}`, `${upstream.*}` before submit. See **[CONTEXTS.md](./CONTEXTS.md)**.
 
 ## Point a node at `connection_id`
 
@@ -76,7 +80,7 @@ Kinds: `sftp`, `s3`, `snowflake`, `postgres`, `http`.
 
 Runtime merges connection public fields + resolved secrets into the node config **in memory only**. Version snapshots keep the `connection_id` reference, not the password.
 
-Same pattern for: `s3_source`, `snowflake_destination`, `postgres_source` / `postgres_destination`, `http_api_source`, `sftp_destination`.
+Same pattern for: `s3_source`, `snowflake_destination`, `postgres_source` / `postgres_destination`, `http_api_source`, `sftp_destination`, `databricks_job` / `databricks_sql`.
 
 ## SecretProvider (Community)
 

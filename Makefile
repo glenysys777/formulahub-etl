@@ -1,4 +1,4 @@
-.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks api worker web build docker-up docker-down lint
+.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql api worker web build docker-up docker-down lint
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -74,6 +74,10 @@ demo-kafka: seed
 demo-s3-databricks: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
 		python3 -m formulaetl.cli run demos/s3-databricks/pipeline.json
+
+demo-databricks-sql: seed
+	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 -m formulaetl.cli run demos/api-databricks-sql/pipeline.json
 
 demo-lookup-join: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \

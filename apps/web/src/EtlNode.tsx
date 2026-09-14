@@ -21,6 +21,7 @@ const CATEGORY: Record<string, string> = {
   mysql_destination: "db",
   snowflake_destination: "db",
   databricks_job: "orch",
+  databricks_sql: "orch",
 
   pgp_decrypt: "security",
   pgp_encrypt: "security",
@@ -107,6 +108,16 @@ export function ComponentGlyph({
         <rect x="2" y="3" width="12" height="10" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
         <path d="M2 6.5h12M6.5 3v10M9.5 3v10" stroke="currentColor" strokeWidth="1.2" />
         <path d="M11.2 9.2 13.5 10.5 11.2 11.8V9.2Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  // SQL statement (warehouse) — table + cursor
+  if (type === "databricks_sql") {
+    return (
+      <svg {...common}>
+        <rect x="2" y="3" width="12" height="10" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M2 6.5h12M6.5 3v10M9.5 3v10" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M4.2 12.2h3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     );
   }
@@ -215,6 +226,11 @@ function summary(type: string, config: Record<string, unknown>): string {
     return `${config.topic || "topic"} @ ${config.brokers || "brokers"}`;
   if (type === "databricks_job")
     return `job ${config.job_id || "?"} · ${config.workspace_host || "host"}`;
+  if (type === "databricks_sql") {
+    const sql = String(config.sql || "");
+    const short = sql.length > 36 ? `${sql.slice(0, 36)}…` : sql || "SQL";
+    return `${config.warehouse_id || "warehouse"} · ${short}`;
+  }
   if (type === "local_file_source") return String(config.path || "");
   if (type === "http_api_source") return String(config.url || "HTTP API");
   if (type === "excel_source")

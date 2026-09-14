@@ -90,7 +90,15 @@ function defaultConfigFor(type: string): Record<string, unknown> {
     return {
       workspace_host: "demo",
       job_id: "1001",
-      notebook_params: ["source=formulaetl"],
+      notebook_params: ["source=formulaetl", "env=${context.env}"],
+      wait_for_completion: true,
+      demo: true,
+    };
+  if (type === "databricks_sql")
+    return {
+      workspace_host: "demo",
+      warehouse_id: "demo-warehouse",
+      sql: "SELECT * FROM orders WHERE dt = '${run_date}' AND env = '${context.env}'",
       wait_for_completion: true,
       demo: true,
     };
@@ -653,6 +661,11 @@ function AppCanvas() {
     schedulePersist();
   };
 
+  const updatePipelineMetadata = (metadata: Record<string, unknown>) => {
+    setPipeline((p) => (p ? { ...p, metadata } : p));
+    schedulePersist();
+  };
+
   const metrics = run?.metrics || {};
   const selectedData = selected ? (selected.data as EtlNodeData) : null;
 
@@ -1088,8 +1101,10 @@ function AppCanvas() {
                   label={selectedData.label}
                   config={selectedData.config || {}}
                   component={componentByType[selectedData.componentType]}
+                  metadata={pipeline?.metadata}
                   onChange={updateSelectedConfig}
                   onConfigReplace={replaceSelectedConfig}
+                  onMetadataChange={updatePipelineMetadata}
                 />
               </>
             ) : (

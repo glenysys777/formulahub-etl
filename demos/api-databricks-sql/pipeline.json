@@ -1,0 +1,65 @@
+{
+  "id": "demo-api-databricks-sql",
+  "name": "API → Databricks SQL (${run_date} / ${context.env})",
+  "description": "HTTP API (demo fixture) → Databricks SQL Warehouse statement with dynamic ${run_date} and ${context.env}. DEMO writes a Statement Execution–shaped sidecar with resolved SQL. LIVE Databricks remains UNPROVEN until credentials.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "api",
+      "type": "http_api_source",
+      "label": "HTTP API Source",
+      "config": {
+        "url": "https://api.example.com/v1/orders",
+        "method": "GET",
+        "json_path": "data.items",
+        "timeout_sec": 30,
+        "demo": true
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "sql",
+      "type": "databricks_sql",
+      "label": "Databricks SQL",
+      "config": {
+        "workspace_host": "demo",
+        "warehouse_id": "demo-warehouse",
+        "http_path": "/sql/1.0/warehouses/demo",
+        "sql": "INSERT INTO ${context.catalog}.orders_staging\nSELECT * FROM orders\nWHERE order_date = '${run_date}'\n  AND env = '${context.env}'\n  AND channel = '${upstream.channel}'",
+        "wait_for_completion": true,
+        "poll_interval_sec": 1,
+        "demo": true,
+        "demo_output_dir": "data/out/databricks_sql_demo"
+      },
+      "position": { "x": 360, "y": 180 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "api", "target": "sql" }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "api-databricks-sql",
+    "run_params": {
+      "run_date": "2026-09-14"
+    },
+    "contexts": {
+      "active": "DEV",
+      "sets": {
+        "DEV": {
+          "env": "dev",
+          "catalog": "sandbox"
+        },
+        "QA": {
+          "env": "qa",
+          "catalog": "qa_main"
+        },
+        "PROD": {
+          "env": "prod",
+          "catalog": "main"
+        }
+      }
+    }
+  }
+}

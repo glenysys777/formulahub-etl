@@ -248,6 +248,7 @@ def _ensure_demo_loaded(*, refresh: bool = False) -> None:
         ("demos/python-row-flex/pipeline.json", "demo-python-row-flex"),
         ("demos/api-kafka-databricks/pipeline.json", "demo-api-kafka-databricks"),
         ("demos/s3-databricks/pipeline.json", "demo-s3-databricks"),
+        ("demos/api-databricks-sql/pipeline.json", "demo-api-databricks-sql"),
         ("demos/lookup-join-mapper/pipeline.json", "demo-lookup-join-mapper"),
     ):
         demo_path = WORK_DIR / rel

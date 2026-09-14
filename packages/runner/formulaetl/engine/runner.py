@@ -98,6 +98,10 @@ class PipelineRunner:
             get_connection=self.get_connection,
         )
 
+        from formulaetl.sdk.vars import bind_pipeline_variables
+
+        scope = bind_pipeline_variables(ctx, pipeline)
+
         result = RunResult(
             run_id=run_id,
             pipeline_id=pipeline.id,
@@ -105,9 +109,11 @@ class PipelineRunner:
             logs=logs,
         )
         t0 = time.perf_counter()
+        ctx_label = scope.active_context or "(none)"
         _log(
             f"Starting pipeline '{pipeline.name}' "
-            f"(demo={self.demo_mode}, batch_size={self.batch_size})"
+            f"(demo={self.demo_mode}, batch_size={self.batch_size}, "
+            f"context={ctx_label})"
         )
 
         exec_plan: ExecutionPlan | None = None
@@ -135,12 +141,30 @@ class PipelineRunner:
                 )
                 # Phase F: merge connection_id + secret refs (never persist merged secrets)
                 resolved_cfg = ctx.resolve_config(node.config, component_type=node.type)
-                component = create_component(node.type, resolved_cfg)
-                component.validate_config()
 
                 dataset, input_rows, upstream_artifacts, upstream_handle = _gather_inputs(
                     nid, inbound, node_outputs, ctx, self.batch_size
                 )
+
+                # Resolve ${context.*} / ${run.*} / ${env.*} / ${upstream.*} / ${key}
+                # Keep original templates for components that log / sidecar them.
+                from formulaetl.sdk.vars import resolve_config_vars, find_refs
+
+                templates: dict[str, Any] = {}
+                for key, val in (node.config or {}).items():
+                    if isinstance(val, str) and find_refs(val):
+                        templates[key] = val
+                    elif isinstance(val, list) and any(
+                        isinstance(x, str) and find_refs(x) for x in val
+                    ):
+                        templates[key] = val
+                resolved_cfg = resolve_config_vars(
+                    resolved_cfg, ctx, upstream_rows=input_rows
+                )
+                if templates:
+                    resolved_cfg = {**resolved_cfg, "_var_templates": templates}
+                component = create_component(node.type, resolved_cfg)
+                component.validate_config()
 
                 apply_upstream_to_component(
                     component,
