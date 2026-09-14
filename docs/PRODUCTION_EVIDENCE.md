@@ -6,7 +6,7 @@ Claims in sales/README are **not** evidence. Each row is a statement we are will
 **Phase B merge tip:** `f2d8b57`  
 **Phase C merge tip:** `dce51a6`  
 **Phase D+E merge tip:** `1b82aa5`  
-**Phase F branch tip:** this PR  
+**Phase F branch tip:** this PR (`8efe72c` + docs tip)  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
@@ -18,7 +18,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | **TBD after run** — includes Phase F connections/secrets tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
+| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | **146 passed**, 1 skipped (`RUN_CSV_1M`), warnings (pgpy). Includes Phase F connections/secrets tests (+13). `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
 | A2 | Web production build | PROVEN | Phase D+E | Unchanged intent (no UI redesign this phase) | `1b82aa5` | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` | PROVEN **absent** | `ls .github/workflows` | Still no workflow files | `cecb1af` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
@@ -90,3 +90,4 @@ Phase B `f2d8b57` · Phase C `dce51a6` · Phase D+E `1b82aa5` — see prior sect
 - Readiness: connections + secret refs + optional API key move **secrets/auth** from ABSENT toward **ALPHA** (Community local). Overall product for Customer #1 live connectors remains **DEMO** until live proofs.
 - See `docs/CONNECTIONS.md` for create-connection + migration steps.
 - CLI `formulaetl run` resolves env secret refs; ConnectionStore requires the API/DB path.
+- Pytest **count** for Phase F: **146 passed**, 1 skipped (Phase D+E was 133; Phase C was 127).
