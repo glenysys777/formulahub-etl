@@ -1,6 +1,6 @@
 # CUSTOMER_001 — Production evidence matrix (PROVE+SELL)
 
-**Audited tip:** `1549d6d` (`origin/main`) + LOCAL wedge PR (2026-09-14)  
+**Audited tip:** `e38605d` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22)  
 **Mission:** Honest production-evidence for design-partner sell. **Never claim LIVE proven from `FORMULAETL_DEMO=1`.**  
 **Sources:** code under `packages/runner`, `packages/api`, demos, `tests/`, and prior audits (`PRODUCTION_READINESS.md`, `PRODUCTION_EVIDENCE.md`, `CURRENT_STATE_MATRIX.md`). Sales copy is **not** evidence.
 
@@ -68,7 +68,7 @@ Harness: `docs/design-partner/LIVE_WEDGE.md`. CI: `pytest -m "not live and not b
 | **Job Contexts `${…}`** | ALPHA | **YES** | **YES** | N/A | **Yes** for non-secret params | Not a secrets vault |
 | **Pipeline validate** | ALPHA (structural) | **YES** | **YES** | **NO** (not live connectivity) | **Yes** as preflight | Does not prove cloud reachability |
 | **Studio (canvas / Save / Git mirror)** | ALPHA | **YES** | **YES** (build + UX) | N/A | **Yes** as designer | Vercel UI ≠ runner; API must be local/Docker |
-| **Desktop shell** | ABSENT (plan only) | **NO** | **NO** | **NO** | N/A | `DESKTOP_SHELL.md` — do not merge/sell as shipped |
+| **Desktop shell** (Studio.app / Electron Mac pack) | **ALPHA** (shipped `cc04ebc` / #20) | **YES** (local launcher path) | **Partial** (DEMO/LOCAL unzip → double-click / `make desktop`; Linux CI smoke only — no signed Mac `.dmg` claim) | **NO** | **Partial** — DEMO/LOCAL Studio launch only | Not a substitute for LIVE_EXTERNAL wedge proof; unsigned Gatekeeper friction; no cloud auth in this wave — see `studio/DESKTOP_SHELL.md` |
 | **Hosted full ETL runtime** | ABSENT (Vercel UI only) | N/A | N/A | **NO** | **No** | Do not imply Vercel runs jobs |
 | **Kafka source** | DEMO batch fixture / ALPHA clients | **YES** | **YES** | **NO** | **No** as “streaming” | Finite `max_messages` pull — not a streaming runtime |
 | **Spark / K8s / Stripe / Talend importer** | ABSENT (correct freeze) | — | — | — | — | **Do not build** in PROVE+SELL |

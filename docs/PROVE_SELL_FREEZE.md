@@ -1,7 +1,7 @@
 # PROVE+SELL freeze (CUSTOMER_001)
 
 **Locked mode:** BUILD → **PROVE+SELL**  
-**Audited tip:** `067b80d` · 2026-09-14  
+**Audited tip:** `e38605d` · 2026-09-14 (Desktop ALPHA `cc04ebc` / #20; LOCAL wedge #22)  
 **Companion:** [`CUSTOMER001_EVIDENCE_MATRIX.md`](./CUSTOMER001_EVIDENCE_MATRIX.md)
 
 This freeze protects founder credibility. Demo fixtures and green CI are **not** LIVE proof.
@@ -18,7 +18,7 @@ This freeze protects founder credibility. Demo fixtures and green CI are **not**
 | Talend / legacy-ETL importer | Expansion vs trust |
 | Embedded Spark / Polars “runtime product” | Databricks Job/SQL already orchestrate; do not fake a Spark engine |
 | Cosmetic website HTML redesign | Separate repo; not evidence |
-| Desktop shell merge | Plan in `studio/DESKTOP_SHELL.md` — ship only if already open elsewhere |
+| Selling Desktop as LIVE proof | Studio.app / Electron Mac pack is **ALPHA** (`cc04ebc` / #20) — DEMO/LOCAL launch path only; not LIVE_EXTERNAL wedge proof |
 | Claiming LIVE from `FORMULAETL_DEMO=1` | Hard rule — sidecars / mock S3 / CSV “Snowflake” are DEMO |
 | High-volume Snowflake sales claim | Live path is still `INSERT…executemany` — see `snowflake/BULK_LOAD.md` |
 | “Streaming Kafka” / “we run Spark” marketing | Batch pull + Jobs API only |
