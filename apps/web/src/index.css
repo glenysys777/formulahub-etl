@@ -140,6 +140,24 @@ select {
   position: relative;
 }
 
+.file-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.file-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.file-menu > summary::after {
+  content: "▾";
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
 .file-menu-dropdown {
   position: absolute;
   top: calc(100% + 6px);

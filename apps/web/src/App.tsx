@@ -267,7 +267,7 @@ function AppCanvas() {
     validate: boolean;
   }>({ pipeline: false, schedule: false, lastRun: false, logs: false, validate: false });
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
-  const fileMenuRef = useRef<HTMLDivElement | null>(null);
+  const fileMenuRef = useRef<HTMLDetailsElement | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddQuery, setQuickAddQuery] = useState("");
   const [canvasFocused, setCanvasFocused] = useState(false);
@@ -1063,84 +1063,77 @@ function AppCanvas() {
           >
             Load demo
           </button>
-          <div className={`file-menu${fileMenuOpen ? " is-open" : ""}`} ref={fileMenuRef}>
-            <button
-              type="button"
+          <button
+            type="button"
+            className="btn"
+            data-testid="save-pipeline"
+            onClick={() => void onSavePipeline()}
+            disabled={busy || saveBusy}
+            title="Save canvas to control plane + work_dir/pipelines/{id}.json"
+          >
+            {saveBusy ? "Saving…" : "Save"}
+          </button>
+          <details
+            className={`file-menu${fileMenuOpen ? " is-open" : ""}`}
+            ref={fileMenuRef}
+            open={fileMenuOpen}
+            onToggle={(e) => {
+              setFileMenuOpen((e.target as HTMLDetailsElement).open);
+            }}
+            data-testid="file-menu-details"
+          >
+            <summary
               className="btn"
               data-testid="file-menu"
-              aria-haspopup="menu"
-              aria-expanded={fileMenuOpen}
-              disabled={busy && !pipeline}
-              title="Save, export, or copy git commands"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setFileMenuOpen((v) => !v);
-              }}
+              title="Export or copy git commands"
             >
-              File ▾
-            </button>
-            {fileMenuOpen && (
-              <div className="file-menu-dropdown" role="menu" data-testid="file-menu-dropdown">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="file-menu-item"
-                  data-testid="save-pipeline"
-                  disabled={busy || saveBusy}
-                  title="Save canvas to control plane + work_dir/pipelines/{id}.json"
-                  onClick={() => {
-                    setFileMenuOpen(false);
-                    void onSavePipeline();
-                  }}
-                >
-                  {saveBusy ? "Saving…" : "Save"}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="file-menu-item"
-                  data-testid="export-pipeline-json"
-                  disabled={busy || !pipeline}
-                  title="Download pipeline JSON"
-                  onClick={() => {
-                    setFileMenuOpen(false);
-                    void onExportPipeline("json");
-                  }}
-                >
-                  Export JSON
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="file-menu-item"
-                  data-testid="export-pipeline-zip"
-                  disabled={busy || !pipeline}
-                  title="Download zip with JSON + README"
-                  onClick={() => {
-                    setFileMenuOpen(false);
-                    void onExportPipeline("zip");
-                  }}
-                >
-                  Export zip
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="file-menu-item"
-                  data-testid="copy-git-commands"
-                  disabled={!pipeline}
-                  title="Copy git add/commit commands for this pipeline file"
-                  onClick={() => {
-                    setFileMenuOpen(false);
-                    void onCopyGitCommands();
-                  }}
-                >
-                  Copy git commands
-                </button>
-              </div>
-            )}
-          </div>
+              File
+            </summary>
+            <div className="file-menu-dropdown" role="menu" data-testid="file-menu-dropdown">
+              <button
+                type="button"
+                role="menuitem"
+                className="file-menu-item"
+                data-testid="export-pipeline-json"
+                disabled={busy || !pipeline}
+                title="Download pipeline JSON"
+                onClick={() => {
+                  setFileMenuOpen(false);
+                  void onExportPipeline("json");
+                }}
+              >
+                Export JSON
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="file-menu-item"
+                data-testid="export-pipeline-zip"
+                disabled={busy || !pipeline}
+                title="Download zip with JSON + README"
+                onClick={() => {
+                  setFileMenuOpen(false);
+                  void onExportPipeline("zip");
+                }}
+              >
+                Export zip
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="file-menu-item"
+                data-testid="copy-git-commands"
+                disabled={!pipeline}
+                title="Copy git add/commit commands for this pipeline file"
+                onClick={() => {
+                  setFileMenuOpen(false);
+                  void onCopyGitCommands();
+                }}
+              >
+                Copy git commands
+              </button>
+            </div>
+          </details>
           <button
             type="button"
             className="btn"
