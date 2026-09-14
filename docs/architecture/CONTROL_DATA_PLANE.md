@@ -62,7 +62,7 @@ See capability matrix in `docs/PRODUCTION_READINESS.md`.
 ```
 
 - **DEMO proven:** sidecar SUCCESS / SUCCEEDED with resolved params — CI and `FORMULAETL_DEMO=1`.
-- **LIVE external proven:** **NO** until `workspace_host` + token (+ `warehouse_id` for SQL) and `FORMULAETL_DEMO=0` succeed outside CI.
+- **LIVE external proven (SQL Soft-PASS):** Free Edition Statement Execution API `SELECT 1` — [`docs/evidence/databricks_sql_smoke_redacted.json`](../evidence/databricks_sql_smoke_redacted.json) (2026-09-14). **Jobs** still **UNPROVEN**.
 - Do **not** sell “FormulaETL runs Spark” or equate sidecar JSON with a cluster job.
 
 Evidence: [`docs/CUSTOMER001_EVIDENCE_MATRIX.md`](../CUSTOMER001_EVIDENCE_MATRIX.md) · Contexts: [`docs/CONTEXTS.md`](../CONTEXTS.md).
