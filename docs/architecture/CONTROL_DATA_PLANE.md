@@ -41,3 +41,28 @@ Customer #1 production trust still needs live connector proofs + a private worke
 - Multi-tenant hosted workers and HA schedulers are **ENTERPRISE**.
 
 See capability matrix in `docs/PRODUCTION_READINESS.md`.
+
+---
+
+## Databricks: FormulaETL orchestrates; Spark stays in Databricks
+
+**PROVE+SELL honesty (CUSTOMER_001):** FormulaETL is the **control / orchestration** plane for Databricks — not an embedded Spark runtime.
+
+| Plane | Who | What |
+|-------|-----|------|
+| **FormulaETL** | Studio + API + sequential `PipelineRunner` | Triggers **Databricks Job** (`/api/2.1/jobs/run-now` + poll) or **Databricks SQL** (Statement Execution API). Resolves `${…}` Job Contexts. DEMO writes Jobs-/Statement-shaped **sidecars** under `data/out/`. |
+| **Databricks** | Customer workspace | Distributed **Spark** jobs, SQL Warehouses, clusters — the actual data-plane compute. |
+
+```
+┌──────────────────────────┐         ┌─────────────────────────────┐
+│ FormulaETL               │  HTTP   │ Databricks workspace        │
+│  databricks_job / _sql   │ ──────► │  Jobs API / SQL Warehouse   │
+│  DEMO sidecar if no PAT  │         │  Spark / SQL compute here   │
+└──────────────────────────┘         └─────────────────────────────┘
+```
+
+- **DEMO proven:** sidecar SUCCESS / SUCCEEDED with resolved params — CI and `FORMULAETL_DEMO=1`.
+- **LIVE external proven:** **NO** until `workspace_host` + token (+ `warehouse_id` for SQL) and `FORMULAETL_DEMO=0` succeed outside CI.
+- Do **not** sell “FormulaETL runs Spark” or equate sidecar JSON with a cluster job.
+
+Evidence: [`docs/CUSTOMER001_EVIDENCE_MATRIX.md`](../CUSTOMER001_EVIDENCE_MATRIX.md) · Contexts: [`docs/CONTEXTS.md`](../CONTEXTS.md).
