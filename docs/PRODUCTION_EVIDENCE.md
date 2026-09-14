@@ -52,7 +52,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 | C4 | Live Postgres load in wedge | UNPROVEN | `LIVE_DEST=postgres` + `LIVE_POSTGRES_*` | Not run | — | — |
 | C5 | Live Snowflake load in wedge | UNPROVEN | `LIVE_DEST=snowflake` + `LIVE_SNOWFLAKE_*` | Not run | — | — |
 | C6 | Full live wedge E2E (source→archive) | UNPROVEN | `docs/design-partner/LIVE_WEDGE.md` | **Do not mark PROVEN** until a real run’s JSON (redacted) is pasted here with SHA + date. **Do not fake LIVE PROVEN.** | — | — |
-| C7 | Databricks Free Edition SQL smoke (`SELECT 1` via Statement Execution API) | **PROVEN Soft-PASS LIVE_EXTERNAL SQL only** | Founder Free Edition workspace + Serverless Starter Warehouse; `FORMULAETL_DEMO=0`; PAT **not** stored in repo | Redacted: [`docs/evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json) (`host`/`warehouse_id`/`SUCCEEDED`/`total_row_count=1`). **Does not** prove Databricks Jobs. After merge onto `main`, record merge SHA here. | this PR — **replace with merge SHA on main** | 2026-09-14 |
+| C7 | Databricks Free Edition SQL smoke (`SELECT 1` via Statement Execution API) | **PROVEN Soft-PASS LIVE_EXTERNAL SQL only** | Founder Free Edition workspace + Serverless Starter Warehouse; `FORMULAETL_DEMO=0`; PAT **not** stored in repo | Redacted: [`docs/evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json) (`host`/`warehouse_id`/`SUCCEEDED`/`total_row_count=1`). **Does not** prove Databricks Jobs. | `9f8fc2b` (#24 merge on `main`) | 2026-09-14 |
 
 CI never sets `RUN_LIVE_WEDGE`. Green Actions ≠ LIVE_CLOUD PROVEN. C7 is manual founder evidence outside CI.
 

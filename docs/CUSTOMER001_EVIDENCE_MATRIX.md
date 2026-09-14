@@ -1,6 +1,6 @@
 # CUSTOMER_001 — Production evidence matrix (PROVE+SELL)
 
-**Audited tip:** `2b1ae36` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; matrix tip `#23`)  
+**Audited tip:** `9f8fc2b` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; Databricks SQL Soft-PASS `#24`)  
 **Mission:** Honest production-evidence for design-partner sell. **Never claim LIVE proven from `FORMULAETL_DEMO=1`.**  
 **Sources:** code under `packages/runner`, `packages/api`, demos, `tests/`, and prior audits (`PRODUCTION_READINESS.md`, `PRODUCTION_EVIDENCE.md`, `CURRENT_STATE_MATRIX.md`). Sales copy is **not** evidence.
 
