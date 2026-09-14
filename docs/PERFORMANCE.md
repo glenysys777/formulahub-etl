@@ -1,12 +1,12 @@
-# Performance — how we avoid Talend-style OOM
+# Performance — stream, don’t choke
 
-Founder brief: *if files are large Talend breaks; our site is very slow — needs jet speed.*
+FormulaHub’s claim: **handle huge enterprise files and millions of rows** with a hard memory ceiling — stream through hops instead of loading the whole working set into RAM. Studio should stay snappy while the data plane does that work.
 
 This document is **LOCAL/DEMO** only. It is not live AWS / Snowflake / SFTP throughput.
 
 ## What was breaking
 
-Talend Open Studio and our old runner both kept **the whole file as Python objects in RAM**. At 1M rows the LOCAL/DEMO wedge sat at **~1.4 GiB RSS** and we skipped 10M as likely OOM.
+Our old runner kept **the whole file as Python objects in RAM**. At 1M rows the LOCAL/DEMO wedge sat at **~1.4 GiB RSS** and we skipped 10M as likely OOM.
 
 Studio “slow” was a **separate** problem: React Flow + run polling + SchemaMapper SVG, not the data plane.
 

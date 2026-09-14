@@ -71,7 +71,7 @@ def heuristic_build(description: str, name: str | None = None) -> PipelineDefini
     )
     want_dedupe = _has(text, "dedupe", "deduplicate", "unique", "distinct rows")
     want_sort = _has(text, "sort", "tsort", "tsortrow", "order by")
-    # "java"/"flex" alone are common Talend words; require row/script/code context unless python/tjava*
+    # "java"/"flex" alone are too broad; require row/script/code context unless python/tjava*
     want_python = _has(text, "python", "tjavarow", "tjavaflex", "script per row") or (
         _has(text, "java", "flex") and _has(text, "row", "script", "code", "tjava")
     )

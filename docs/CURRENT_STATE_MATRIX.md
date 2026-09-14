@@ -31,6 +31,6 @@ Status: **DEMO** | **ALPHA** | **ABSENT**. Risk: **blocker** | **high** | **medi
 | Control vs data plane split | ALPHA (queue + optional worker + secret resolve) | high | Private worker + API key for partners |
 | Design-partner docs pack | ALPHA | low | `docs/design-partner/` |
 | LIVE_CLOUD wedge harness (opt-in) | ALPHA harness / DEMO CI (UNPROVEN cloud) | high until partner run | `scripts/live_wedge_e2e.py`; never claim PROVEN without stdout |
-| New connectors / Talend importer / billing / K8s / Spark | ABSENT | — | **Do not add** |
+| New connectors / legacy-ETL importer / billing / K8s / Spark | ABSENT | — | **Do not add** |
 
 Phase G stops feature expansion: trust via validate + observability polish + design-partner docs + CI only.

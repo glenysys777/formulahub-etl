@@ -103,7 +103,7 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 - Real row-wise AST evaluator (`upper`, `col()`, arithmetic, Variables middle layer).
 - UI: Input · Variables · Output.
 - Still **one Python list of dicts**. Expression failures become `null` + a log line, not a typed contract.
-- **Not** a multi-input Talend tMap; joins are a separate node.
+- **Not** a multi-input visual join mapper; joins are a separate node.
 
 **Lookup Join** (`lookup_join.py`):
 
@@ -166,7 +166,7 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | Auth / SSO / RBAC | ALPHA (optional API key) / ABSENT SSO | ENTERPRISE / PRODUCTION | No | Open when unset | Set key before live data | Token auth before any customer data |
 | Multi-instance HA | DEMO (absent) | ENTERPRISE | No | Single process | Duplicate scheduled runs | Control plane vs workers (see architecture note) |
 | Hosted production runtime | DEMO | PRODUCTION | No | Vercel UI only | README “K8s” is roadmap, not code | Docker API with DEMO=0 only after auth |
-| Billing / marketplace / Talend importer / Spark / K8s operator | Absent (correct) | — | — | — | Feature expansion vs trust | **Do not build** (mission freeze) |
+| Billing / marketplace / legacy-ETL importer / Spark / K8s operator | Absent (correct) | — | — | — | Feature expansion vs trust | **Do not build** (mission freeze) |
 
 ---
 

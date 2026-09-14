@@ -1,4 +1,4 @@
-"""JSONL spill helpers — bound RAM between hops (Talend-style OOM avoidance).
+"""JSONL spill helpers — bound RAM between hops (stream, don’t choke).
 
 Large intermediates are written as newline-delimited JSON under the run temp
 dir and re-read as ``DatasetHandle`` batches. This is LOCAL process spill,

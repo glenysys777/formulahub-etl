@@ -141,7 +141,7 @@ Host: Linux cloud agent, **4× Intel Xeon**, **~15 GiB RAM**, Python 3.12.3. `
 | 1 000 000 | 6.901 | 306 | 144 899 | 1 000 000 | 10 000 | 19 800 | 970 200 | ✓ |
 | 10 000 000 | 74.479 | 2 755 | 134 267 | 10 000 000 | 100 000 | 198 000 | 9 702 000 | ✓ |
 
-1M vs Phase I: **RSS 1432→306 MB** (≤400 MB goal; stretch ≤250 MB not met). **Throughput 43k→145k rows/sec** (≥80k / ≥100k). 100K RSS 199→81 MB (≤150 MB). 10M **completes** (Talend-style OOM avoided); RSS is mostly the dedupe key set, not a second full row copy.
+1M vs Phase I: **RSS 1432→306 MB** (≤400 MB goal; stretch ≤250 MB not met). **Throughput 43k→145k rows/sec** (≥80k / ≥100k). 100K RSS 199→81 MB (≤150 MB). 10M **completes** (streaming + memory ceiling — no full-file RAM choke); RSS is mostly the dedupe key set, not a second full row copy.
 
 Fixture encrypt/prep time is **excluded** from `elapsed_s` (pipeline wall in the child). Peak RSS via `resource.getrusage` in that child (Linux KB→MiB).
 
@@ -165,4 +165,4 @@ See `docs/PERFORMANCE.md` for knobs and what is still DEMO.
 - Phase Perf adds streaming/lazy-chain + LOCAL/DEMO scale evidence; live connector E2E (section C / H) remains **UNPROVEN** until partner credentials exist.
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
-- Pytest **count** this PR (`0067c52`) (default markers): **167 passed**, 1 skipped, 6 deselected (`live` + `bench`).
+- Pytest **count** this PR (default markers): **167 passed**, 1 skipped, 6 deselected (`live` + `bench`). SHA `0067c52`.
