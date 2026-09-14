@@ -1,105 +1,105 @@
 {
-  "run_id": "6c5b647d-6439-4d50-b92c-0bc8e1877f20",
-  "pipeline_id": "demo-api-kafka-databricks",
-  "status": "success",
-  "metrics": {
-    "rows_in": 16,
-    "rows_out": 24,
-    "rows_rejected": 0,
-    "duration_ms": 0.67
-  },
-  "node_metrics": {
-    "kafka": {
-      "rows_in": 0,
-      "rows_out": 8,
-      "rows_rejected": 0,
-      "duration_ms": 0.22
+    "run_id": "9acbc1f0-6a6f-4e59-b328-e244719244da",
+    "pipeline_id": "demo-api-kafka-databricks",
+    "status": "success",
+    "metrics": {
+        "rows_in": 16,
+        "rows_out": 24,
+        "rows_rejected": 0,
+        "duration_ms": 0.85
     },
-    "map": {
-      "rows_in": 8,
-      "rows_out": 8,
-      "rows_rejected": 0,
-      "duration_ms": 0.02
-    },
-    "databricks": {
-      "rows_in": 8,
-      "rows_out": 8,
-      "rows_rejected": 0,
-      "duration_ms": 0.28
-    }
-  },
-  "logs": [
-    "[6c5b647d] Starting pipeline 'Kafka \u2192 Field Mapper \u2192 Databricks Job' (demo=True)",
-    "[6c5b647d] \u2192 Running node 'Kafka Source' (kafka_source)",
-    "[6c5b647d] KafkaSource [demo]: topic=orders brokers=demo \u2190 kafka_orders.jsonl (8 messages)",
-    "[6c5b647d]   \u2713 kafka_source: in=0 out=8 rejected=0 (0.2ms)",
-    "[6c5b647d] \u2192 Running node 'Field Mapper' (column_map)",
-    "[6c5b647d] ColumnMap: applied 11 mappings (drop_unmapped=False) on 8 rows",
-    "[6c5b647d]   \u2713 column_map: in=8 out=8 rejected=0 (0.0ms)",
-    "[6c5b647d] \u2192 Running node 'Databricks Job' (databricks_job)",
-    "[6c5b647d] DatabricksJob [demo]: job_id=1001 run_id=demo-7635f54c7c \u2192 SUCCESS (sidecar=job_1001_20260913T233615Z_demo-7635f54c7c.json, rows_in=8, life_cycle_state=TERMINATED, result_state=SUCCESS)",
-    "[6c5b647d]   \u2713 databricks_job: in=8 out=8 rejected=0 (0.3ms)",
-    "[6c5b647d] Pipeline completed successfully"
-  ],
-  "error": null,
-  "outputs": {
-    "kafka": {
-      "rows": 8,
-      "rejects": 0,
-      "side_effects": {
-        "mode": "demo",
-        "brokers": "demo",
-        "topic": "orders",
-        "group_id": "formulaetl-demo"
-      },
-      "artifacts": {
-        "message_count": 8
-      }
-    },
-    "map": {
-      "rows": 8,
-      "rejects": 0,
-      "side_effects": {},
-      "artifacts": {}
-    },
-    "databricks": {
-      "rows": 8,
-      "rejects": 0,
-      "side_effects": {
-        "mode": "demo",
-        "run_id": "demo-7635f54c7c",
-        "job_id": "1001",
-        "state": "SUCCESS",
-        "life_cycle_state": "TERMINATED",
-        "result_state": "SUCCESS",
-        "sidecar": "/workspace/data/out/databricks_demo/job_1001_20260913T233615Z_demo-7635f54c7c.json",
-        "rows_passed": 8,
-        "metrics": {
-          "rows_passed": 8,
-          "job_id": "1001",
-          "run_id": "demo-7635f54c7c",
-          "result_state": "SUCCESS"
+    "node_metrics": {
+        "kafka": {
+            "rows_in": 0,
+            "rows_out": 8,
+            "rows_rejected": 0,
+            "duration_ms": 0.29
+        },
+        "map": {
+            "rows_in": 8,
+            "rows_out": 8,
+            "rows_rejected": 0,
+            "duration_ms": 0.02
+        },
+        "databricks": {
+            "rows_in": 8,
+            "rows_out": 8,
+            "rows_rejected": 0,
+            "duration_ms": 0.35
         }
-      },
-      "artifacts": {
-        "databricks_run": {
-          "mode": "demo",
-          "run_id": "demo-7635f54c7c",
-          "job_id": "1001",
-          "state": "SUCCESS",
-          "life_cycle_state": "TERMINATED",
-          "result_state": "SUCCESS",
-          "sidecar": "/workspace/data/out/databricks_demo/job_1001_20260913T233615Z_demo-7635f54c7c.json",
-          "rows_passed": 8,
-          "metrics": {
-            "rows_passed": 8,
-            "job_id": "1001",
-            "run_id": "demo-7635f54c7c",
-            "result_state": "SUCCESS"
-          }
+    },
+    "logs": [
+        "[9acbc1f0] Starting pipeline 'Kafka \u2192 Field Mapper \u2192 Databricks Job' (demo=True)",
+        "[9acbc1f0] \u2192 Running node 'Kafka Source' (kafka_source)",
+        "[9acbc1f0] KafkaSource [demo]: topic=orders brokers=demo \u2190 kafka_orders.jsonl (8 messages)",
+        "[9acbc1f0]   \u2713 kafka_source: in=0 out=8 rejected=0 (0.3ms)",
+        "[9acbc1f0] \u2192 Running node 'Field Mapper' (column_map)",
+        "[9acbc1f0] ColumnMap: applied 11 mappings (drop_unmapped=False) on 8 rows",
+        "[9acbc1f0]   \u2713 column_map: in=8 out=8 rejected=0 (0.0ms)",
+        "[9acbc1f0] \u2192 Running node 'Databricks Job' (databricks_job)",
+        "[9acbc1f0] DatabricksJob [demo]: job_id=1001 run_id=demo-200bb93d71 \u2192 SUCCESS (sidecar=job_1001_20260914T002755Z_demo-200bb93d71.json, rows_in=8, life_cycle_state=TERMINATED, result_state=SUCCESS)",
+        "[9acbc1f0]   \u2713 databricks_job: in=8 out=8 rejected=0 (0.4ms)",
+        "[9acbc1f0] Pipeline completed successfully"
+    ],
+    "error": null,
+    "outputs": {
+        "kafka": {
+            "rows": 8,
+            "rejects": 0,
+            "side_effects": {
+                "mode": "demo",
+                "brokers": "demo",
+                "topic": "orders",
+                "group_id": "formulaetl-demo"
+            },
+            "artifacts": {
+                "message_count": 8
+            }
+        },
+        "map": {
+            "rows": 8,
+            "rejects": 0,
+            "side_effects": {},
+            "artifacts": {}
+        },
+        "databricks": {
+            "rows": 8,
+            "rejects": 0,
+            "side_effects": {
+                "mode": "demo",
+                "run_id": "demo-200bb93d71",
+                "job_id": "1001",
+                "state": "SUCCESS",
+                "life_cycle_state": "TERMINATED",
+                "result_state": "SUCCESS",
+                "sidecar": "/workspace/data/out/databricks_demo/job_1001_20260914T002755Z_demo-200bb93d71.json",
+                "rows_passed": 8,
+                "metrics": {
+                    "rows_passed": 8,
+                    "job_id": "1001",
+                    "run_id": "demo-200bb93d71",
+                    "result_state": "SUCCESS"
+                }
+            },
+            "artifacts": {
+                "databricks_run": {
+                    "mode": "demo",
+                    "run_id": "demo-200bb93d71",
+                    "job_id": "1001",
+                    "state": "SUCCESS",
+                    "life_cycle_state": "TERMINATED",
+                    "result_state": "SUCCESS",
+                    "sidecar": "/workspace/data/out/databricks_demo/job_1001_20260914T002755Z_demo-200bb93d71.json",
+                    "rows_passed": 8,
+                    "metrics": {
+                        "rows_passed": 8,
+                        "job_id": "1001",
+                        "run_id": "demo-200bb93d71",
+                        "result_state": "SUCCESS"
+                    }
+                }
+            }
         }
-      }
-    }
-  },
-  "duration_ms": 0.6652559995927732
+    },
+    "duration_ms": 0.8502880000378354
 }

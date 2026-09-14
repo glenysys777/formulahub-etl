@@ -560,11 +560,18 @@ function AppCanvas() {
       await api.updatePipeline(pipeline.id, updated);
       setPipeline(updated);
       const { run_id } = await api.runPipeline(pipeline.id);
-      // Brief flowing animation even if the API returns instantly
-      await new Promise((r) => setTimeout(r, 700));
-      const status = await api.getRun(run_id);
+      // Brief flowing animation, then poll until terminal (demo runs sync but stay resilient)
+      await new Promise((r) => setTimeout(r, 450));
+      let status = await api.getRun(run_id);
+      for (let i = 0; i < 40 && (status.status === "pending" || status.status === "running"); i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        status = await api.getRun(run_id);
+      }
       setRun(status);
       applyRunVisuals(false, status);
+      requestAnimationFrame(() => {
+        document.querySelector(".logs-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
       if (status.status === "failed") {
         setError(status.error || "Pipeline run failed");
       }
@@ -818,7 +825,7 @@ function AppCanvas() {
             )}
           </div>
 
-          <div className="sidebar-section">
+          <div className="sidebar-section" data-testid="last-run-panel">
             <h3>Last run</h3>
             {run ? (
               <>
@@ -854,6 +861,27 @@ function AppCanvas() {
             )}
           </div>
 
+          <div className="sidebar-section logs-panel" data-testid="logs-panel">
+            <h3>Logs</h3>
+            <div className="logs" data-testid="run-logs">
+              {run?.logs?.length
+                ? run.logs.map((line, i) => (
+                    <div
+                      key={i}
+                      className={
+                        line.includes("FAILED")
+                          ? "err"
+                          : line.includes("successfully") || line.includes("✓")
+                            ? "ok-line"
+                            : undefined
+                      }
+                    >
+                      {line}
+                    </div>
+                  ))
+                : "No logs yet."}
+            </div>
+          </div>
           <div className="sidebar-section inspector-section">
             <h3>Node inspector</h3>
             {selected && selectedData ? (
@@ -928,27 +956,6 @@ function AppCanvas() {
             )}
           </div>
 
-          <div className="sidebar-section logs-panel">
-            <h3>Logs</h3>
-            <div className="logs">
-              {run?.logs?.length
-                ? run.logs.map((line, i) => (
-                    <div
-                      key={i}
-                      className={
-                        line.includes("FAILED")
-                          ? "err"
-                          : line.includes("successfully") || line.includes("✓")
-                            ? "ok-line"
-                            : undefined
-                      }
-                    >
-                      {line}
-                    </div>
-                  ))
-                : "No logs yet."}
-            </div>
-          </div>
         </aside>
       </div>
 

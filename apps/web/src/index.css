@@ -723,11 +723,13 @@ select {
 }
 
 .logs-panel {
-  flex: 1;
-  min-height: 140px;
+  flex: 1.2;
+  min-height: 180px;
+  max-height: 42vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  order: 0;
 }
 
 .logs {
