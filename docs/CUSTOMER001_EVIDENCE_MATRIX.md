@@ -1,6 +1,6 @@
 # CUSTOMER_001 — Production evidence matrix (PROVE+SELL)
 
-**Audited tip:** `c9c66e1` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; SQL Soft-PASS `9f8fc2b` / #24; Jobs Soft-PASS this PR)  
+**Audited tip:** `6e2650d` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; SQL Soft-PASS `9f8fc2b` / #24; Jobs Soft-PASS `6e2650d` / #27)  
 **Mission:** Honest production-evidence for design-partner sell. **Never claim LIVE proven from `FORMULAETL_DEMO=1`.**  
 **Sources:** code under `packages/runner`, `packages/api`, demos, `tests/`, and prior audits (`PRODUCTION_READINESS.md`, `PRODUCTION_EVIDENCE.md`, `CURRENT_STATE_MATRIX.md`). Sales copy is **not** evidence.
 
