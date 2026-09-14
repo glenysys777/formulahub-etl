@@ -2,6 +2,7 @@
 data/out/
 data/archive/
 data/rejects/
+data/tmp/
 data/pipelines/
 data/schedules/
 *.pyc

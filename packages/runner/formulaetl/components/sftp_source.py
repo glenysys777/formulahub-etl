@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import ARTIFACT_SOURCE
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
+from formulaetl.sdk.data import ArtifactHandle
 from formulaetl.sdk.registry import register
 
 
@@ -45,6 +47,7 @@ class SFTPSource(BaseComponent):
     component_type = "sftp_source"
     display_name = "SFTP Source"
     category = "source"
+    capabilities = ARTIFACT_SOURCE
     config_schema = {
         "type": "object",
         "required": ["host", "remote_path", "local_staging_path"],
@@ -130,10 +133,10 @@ class SFTPSource(BaseComponent):
                     staging.mkdir(parents=True, exist_ok=True)
                     dest = staging / src.name
                 shutil.copy2(src, dest)
-                raw = dest.read_bytes()
+                handle = ArtifactHandle.from_path(dest, temp=False)
                 ctx.emit(
                     f"SFTPSource [demo]: mocked sftp://{host}/{remote_path} "
-                    f"← fixtures → {dest} ({len(raw)} bytes)"
+                    f"← fixtures → {dest} ({handle.size} bytes)"
                 )
                 metrics.rows_out = 1
                 return ComponentResult(
@@ -142,15 +145,16 @@ class SFTPSource(BaseComponent):
                             "_sftp_host": host,
                             "_sftp_remote": remote_path,
                             "_local_path": str(dest),
-                            "_size": len(raw),
+                            "_size": handle.size,
                         }
                     ],
                     metrics=metrics,
                     artifacts={
                         "path": str(dest),
-                        "bytes": raw,
                         "remote_path": remote_path,
+                        "artifact": handle.to_dict(),
                     },
+                    artifact=handle,
                     side_effects={
                         "mode": "demo",
                         "local_path": str(dest),
@@ -192,7 +196,7 @@ class SFTPSource(BaseComponent):
             finally:
                 transport.close()
 
-            raw = dest.read_bytes()
+            handle = ArtifactHandle.from_path(dest, temp=False)
             ctx.emit(f"SFTPSource: downloaded sftp://{host}:{port}{remote_path} → {dest}")
             metrics.rows_out = 1
             return ComponentResult(
@@ -201,10 +205,15 @@ class SFTPSource(BaseComponent):
                         "_sftp_host": host,
                         "_sftp_remote": remote_path,
                         "_local_path": str(dest),
-                        "_size": len(raw),
+                        "_size": handle.size,
                     }
                 ],
                 metrics=metrics,
-                artifacts={"path": str(dest), "bytes": raw, "remote_path": remote_path},
+                artifacts={
+                    "path": str(dest),
+                    "remote_path": remote_path,
+                    "artifact": handle.to_dict(),
+                },
+                artifact=handle,
                 side_effects={"mode": "sftp", "local_path": str(dest)},
             )

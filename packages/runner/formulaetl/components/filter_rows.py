@@ -7,6 +7,7 @@ import operator
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import ROWWISE
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -64,6 +65,7 @@ class Filter(BaseComponent):
     component_type = "filter"
     display_name = "Filter"
     category = "transform"
+    capabilities = ROWWISE
     config_schema = {
         "type": "object",
         "required": ["expression"],

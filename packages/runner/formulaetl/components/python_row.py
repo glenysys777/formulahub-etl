@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import BLOCKING_ROWS, ROWWISE, ComponentCapabilities
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -82,6 +83,7 @@ class PythonRow(BaseComponent):
     component_type = "python_row"
     display_name = "Python Row"
     category = "transform"
+    capabilities = ROWWISE
     config_schema = {
         "type": "object",
         "required": ["code"],
@@ -133,6 +135,11 @@ class PythonRow(BaseComponent):
             "help": "Name bound in the sandbox: 'row' (dict) or 'rows' (list of dicts)",
         },
     ]
+
+    def get_capabilities(self) -> ComponentCapabilities:
+        if (self.config.get("mode") or "row").lower() == "batch":
+            return BLOCKING_ROWS
+        return ROWWISE
 
     def run(self, ctx: RunContext, rows: list[dict[str, Any]] | None = None) -> ComponentResult:
         metrics = Metrics()

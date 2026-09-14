@@ -1,6 +1,6 @@
 # Control plane vs data plane (north star)
 
-**Status:** design intent only. **No implementation in this PR.**
+**Status:** design intent. Phase B did **not** split processes. It added in-process `DatasetHandle` / `ArtifactHandle` and a planner that feeds bounded `RowBatch`es or file handles. Control plane **is still** the data plane.
 
 Customer #1 production trust requires splitting what is today a **single Python process** (FastAPI + in-memory runs + sequential runner + cron thread).
 
@@ -27,6 +27,8 @@ Customer #1 production trust requires splitting what is today a **single Python 
 ## Today (honest)
 
 Control plane **is** the data plane: `POST /run` executes `PipelineRunner` under a process lock and stores logs in `RunStore` memory. Default `FORMULAETL_DEMO=1` reads `./data/s3` and writes `./data/out/*`.
+
+Phase B: the same process now plans `artifact` vs `batches` vs `materialized_rows`. S3/SFTP/PGP prefer on-disk handles over `bytes` in `config`. Destinations still materialize `list[dict]`.
 
 ## Later (not this PR)
 

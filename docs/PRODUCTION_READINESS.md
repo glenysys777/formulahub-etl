@@ -4,7 +4,7 @@
 **Date:** 2026-09-14  
 **Scope:** code inspection of `packages/runner`, `packages/api`, `apps/web`, `demos/`, `tests/`. README and sales copy were **not** treated as evidence.
 
-**This document is Phase A.** No new connectors, no Spark/K8s/billing, no batch/stream rewrite in this PR.
+**This document is Phase A** (code inspection at `b162987`, merged as PR #4). Phase B (batch/stream abstraction) landed later in-process — see `docs/PRODUCTION_EVIDENCE.md` section E. No Spark/K8s/billing in either phase.
 
 ---
 

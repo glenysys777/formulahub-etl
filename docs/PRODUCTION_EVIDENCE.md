@@ -2,8 +2,8 @@
 
 Claims in sales/README are **not** evidence. Each row is a statement we are willing to make only with a command, git SHA, and date.
 
-**Audit SHA (main at start of this work):** `b162987c3667525fcffa75135bbab54e391855f5`  
-**This docs PR branch tip:** fill after evidence commit (see git log on `cursor/production-readiness-audit-71a1`)  
+**Audit SHA (main / Phase A merge):** `cecb1af` (PR #4)  
+**Phase B branch:** `cursor/batch-stream-abstraction-d316`  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
@@ -11,14 +11,14 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 ---
 
-## A. Build and tests (this agent run)
+## A. Build and tests
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -v --tb=short` | **87 passed**, 163 warnings (pgpy deprecations), 9.18s. `FORMULAETL_DEMO=1` via conftest. Not live AWS/Kafka/Snowflake. | `b162987` code + this PR docs | 2026-09-14 |
-| A2 | Web production build | PROVEN | `cd apps/web && npm run build` | **success** — `tsc -b && vite build`; vite 8.3.0; `dist/assets/index-BNQ76Tv6.js` 453.64 kB | this PR | 2026-09-14 |
-| A3 | GitHub Actions CI on `main` | PROVEN **absent** | `ls .github/workflows` | No workflow files in repo at `b162987` | `b162987` | 2026-09-14 |
-| A4 | Default env is demo | PROVEN | Read `tests/conftest.py`, `Makefile` `FORMULAETL_DEMO ?= 1` | Tests force `FORMULAETL_DEMO=1` | `b162987` | 2026-09-14 |
+| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -v --tb=short` | **99 passed**, 163 warnings (pgpy deprecations), 10.05s. Includes 12 new Phase B unit tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/Kafka/Snowflake. | this PR | 2026-09-14 |
+| A2 | Web production build | PROVEN **skipped this PR** | UI untouched | Phase A `npm run build` still stands; no `apps/web` changes in Phase B | Phase A | 2026-09-14 |
+| A3 | GitHub Actions CI on `main` | PROVEN **absent** | `ls .github/workflows` | Still no workflow files | `cecb1af` | 2026-09-14 |
+| A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
 
 ---
 
@@ -26,25 +26,16 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| B1 | Flagship S3→PGP→Snowflake **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | `status=success`; S3Source **[demo]** 1073 bytes; PGPDecrypt real pgpy; CSV 13 rows; SnowflakeDestination **[demo]** CSV under `data/out/snowflake/`; archive moved mock object. Metrics `rows_in=49` are **summed node counts**, not 13 source rows. | this run | 2026-09-14 |
-| B2 | Kafka→Databricks **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/api-kafka-databricks/pipeline.json` | `status=success`; KafkaSource **[demo]** 8 msgs from `kafka_orders.jsonl`; DatabricksJob **[demo]** sidecar `result_state=SUCCESS`. Not a broker or workspace. | this run | 2026-09-14 |
-| B3 | Lookup Join + Field Mapper demo | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.json` | `status=success`; left join 13×12→13; Field Mapper logged `variable failed for total=... 'abc'` then kept 13/13 (silent null). | this run | 2026-09-14 |
-| B4 | Historical founder screenshots / sidecar JSON | PROVEN as **demo artifacts only** | `docs/artifacts/EVIDENCE.md` | Documents fixture Kafka/Databricks UI; not live clusters | `b162987` | 2026-09-14 |
+| B1 | Flagship S3→PGP→Snowflake **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | `status=success`. Planner: S3 `feed=none`, PGP/CSV `feed=artifact`, validate `materialized_rows` (fan-out), transform/logger `feed=batches`, snowflake `materialized_rows`, archive `artifact`. S3 hashed file in place (1074 bytes, sha256 logged) — **no `artifacts["bytes"]`**. PGP wrote `data/tmp/<run>/pgp_decrypt.out`; CSV parsed 13 rows from that path. Validate 10/3. Demo Snowflake CSV + archive move. Metrics `rows_in=49` still **summed node counts**. | this PR | 2026-09-14 |
+| B2 | Kafka→Databricks **demo** CLI | PROVEN **demo only** (Phase A; pytest still covers) | `tests/integration/test_kafka_databricks_pipeline.py` | Integration test green on this PR | this PR | 2026-09-14 |
+| B3 | Lookup Join + Field Mapper demo | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.json` | `status=success`. Lookup join `feed=materialized_rows` (blocking); tMap `feed=batches`; dest `materialized_rows`. Same silent-null on `total='abc'`. | this PR | 2026-09-14 |
+| B4 | Historical founder screenshots / sidecar JSON | PROVEN as **demo artifacts only** | `docs/artifacts/EVIDENCE.md` | Unchanged | `b162987` | 2026-09-14 |
 
 ---
 
 ## C. Live systems (customer-shaped)
 
-| ID | Claim | Status | Command | Result | SHA | Date |
-|----|-------|--------|---------|--------|-----|------|
-| C1 | Live AWS S3 `get_object` E2E | UNPROVEN | `FORMULAETL_DEMO=0` + real bucket | Not run (no credentials in this environment) | `b162987` | 2026-09-14 |
-| C2 | Live SFTP paramiko E2E | UNPROVEN | `FORMULAETL_DEMO=0` + real host | Not run | `b162987` | 2026-09-14 |
-| C3 | Live Postgres psycopg E2E | UNPROVEN | `FORMULAETL_DEMO=0` + DSN | Not run | `b162987` | 2026-09-14 |
-| C4 | Live Snowflake COPY/INSERT E2E | UNPROVEN | extra `formulaetl[snowflake]` + account | Not run | `b162987` | 2026-09-14 |
-| C5 | Live Kafka consumer E2E | UNPROVEN | `formulaetl[kafka]` + brokers | Not run | `b162987` | 2026-09-14 |
-| C6 | Live Databricks Jobs API E2E | UNPROVEN | workspace host + PAT | Not run | `b162987` | 2026-09-14 |
-
-Do **not** promote C-rows to PROVEN from demo sidecars or `docs/artifacts/screenshots/*.json`.
+Unchanged from Phase A — all **UNPROVEN**. Live S3 now *would* `download_file` to a temp path (not `Body.read()` into RAM), but that branch was not executed here.
 
 ---
 
@@ -52,20 +43,43 @@ Do **not** promote C-rows to PROVEN from demo sidecars or `docs/artifacts/screen
 
 | ID | Claim | Status | Evidence | SHA | Date |
 |----|-------|--------|----------|-----|------|
-| D1 | Runner passes `list[dict]` between nodes | PROVEN | `packages/runner/formulaetl/engine/runner.py` `input_rows: list[dict[str, Any]]` | `b162987` | 2026-09-14 |
-| D2 | Binary connectors pass full `bytes` in artifacts | PROVEN | `source_s3.py`, `sftp_source.py`, `pgp_decrypt.py`; runner copies `bytes` into next config | `b162987` | 2026-09-14 |
-| D3 | RunStore is process memory | PROVEN | `RunStore._runs: dict[str, RunResult]` | `b162987` | 2026-09-14 |
-| D4 | API serializes runs with one global `threading.Lock` | PROVEN | `_runner_lock` in `formulaetl_api/__init__.py` | `b162987` | 2026-09-14 |
-| D5 | Scheduler is an in-process poll thread | PROVEN | `PipelineScheduler._loop` daemon thread | `b162987` | 2026-09-14 |
-| D6 | No API authentication | PROVEN | FastAPI routes have no Depends/auth | `b162987` | 2026-09-14 |
-| D7 | Secrets live in node `config` JSON | PROVEN | `PipelineStore.save` dumps full model; demos include `passphrase` | `b162987` | 2026-09-14 |
-| D8 | Kafka live path is a bounded batch pull | PROVEN | `max_messages` loop then close consumer | `b162987` | 2026-09-14 |
-| D9 | Databricks component is Jobs API orchestration | PROVEN | `databricks_job.py` docstring + `jobs/run-now` | `b162987` | 2026-09-14 |
-| D10 | Snowflake default path writes local CSV | PROVEN | `SnowflakeDestination` `use_demo` CSV writer | `b162987` | 2026-09-14 |
+| D1 | Runner still sequential in-process | PROVEN | `PipelineRunner.run` topological loop; no workers | this PR | 2026-09-14 |
+| D2 | File hops use `ArtifactHandle` (S3/SFTP/PGP); runner does not copy `bytes` when a path exists | PROVEN | `sdk/data.py` `ArtifactHandle`; `sdk/adapter.py` `apply_upstream_to_component`; S3/SFTP no longer put `bytes` in artifacts | this PR | 2026-09-14 |
+| D3 | Row-wise nodes can be fed `RowBatch`es; blocking/fan-out still materialize `list[dict]` | PROVEN | `engine/planner.py` `decide_feed`; flagship logs; `test_runner_feeds_filter_in_bounded_batches` | this PR | 2026-09-14 |
+| D4 | Legacy `run(ctx, list[dict])` still works | PROVEN | Default `LEGACY` capabilities + `run_legacy` / `run_batched` adapters; 99 pytest green | this PR | 2026-09-14 |
+| D5 | RunStore is process memory | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
+| D6 | No API authentication | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
+| D7 | Secrets live in node `config` JSON | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
+| D8 | Kafka live path is a bounded batch pull | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
+| D9 | Databricks component is Jobs API orchestration | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
+| D10 | Snowflake default path writes local CSV | PROVEN | unchanged | `cecb1af` | 2026-09-14 |
+
+---
+
+## E. Phase B — what this PR proved
+
+| ID | Claim | Status | Evidence |
+|----|-------|--------|----------|
+| E1 | Neutral data types exist: `RowBatch`, `DatasetHandle`, `ArtifactHandle` | PROVEN | `packages/runner/formulaetl/sdk/data.py` + unit tests |
+| E2 | Planner uses capabilities for real feed decisions (`none` / `artifact` / `batches` / `materialized_rows`) | PROVEN | `engine/planner.py`; logs on B1; `test_plan_flagship_like_graph` |
+| E3 | `list[dict]` adapter: `dataset.materialize()` / `run_legacy` / `run_batched` calling existing `run()` | PROVEN | `sdk/adapter.py`; `test_legacy_component_run_via_adapter` |
+| E4 | Migrated path: S3 → PGP → CSV off giant byte arrays (temp/path + checksum) | PROVEN | B1 logs; `test_s3_source_demo` asserts `"bytes" not in artifacts` |
+| E5 | Remaining components keep `list[dict]` `run()` | PROVEN | pytest 99; destinations still `requires_materialization` |
+
+### Remaining gaps (not this PR)
+
+- Still **one process**. No async workers (Phase D), no secrets/vault (Phase F).
+- `pgpy` still loads the full ciphertext/plaintext while decrypting; we only stopped *passing* those bytes to the next node.
+- Destinations (Snowflake demo, local file) still materialize the full row list. No spill-to-disk for `DatasetHandle`.
+- Excel / JSON / XML / HTTP still whole-object or whole-list. Phase C file-component work.
+- Fan-out (schema validate rejects vs good) forces materialization so both edges can replay.
+- Output row datasets from CSV `run()` are still materialized into `ComponentResult.rows` for the adapter.
+- Live S3/SFTP/warehouse E2E still **UNPROVEN**.
+- Not Spark, not K8s, not streaming Kafka.
 
 ---
 
 ## Notes
 
-- Pytest **count** is only valid for the command output attached to A1 on this date. This run: **87 passed** (prior `docs/artifacts/EVIDENCE.md` said 84 — stale).
-- C-rows remain UNPROVEN. Empty cells stay EMPTY until stdout is pasted.
+- Pytest **count** for Phase B: **99 passed** (Phase A was 87; +12 abstraction/planner/adapter tests).
+- C-rows remain UNPROVEN.

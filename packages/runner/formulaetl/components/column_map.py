@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import ROWWISE
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -44,6 +45,7 @@ class ColumnMap(BaseComponent):
     component_type = "column_map"
     display_name = "Schema Map"
     category = "transform"
+    capabilities = ROWWISE
     config_schema = {
         "type": "object",
         "required": ["mappings"],

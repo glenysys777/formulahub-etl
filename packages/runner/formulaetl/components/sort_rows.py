@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import BLOCKING_ROWS
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -54,6 +55,7 @@ class SortRows(BaseComponent):
     component_type = "sort"
     display_name = "Sort Rows"
     category = "transform"
+    capabilities = BLOCKING_ROWS
     config_schema = {
         "type": "object",
         "required": ["keys"],

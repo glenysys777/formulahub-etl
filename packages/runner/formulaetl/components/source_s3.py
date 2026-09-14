@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import ARTIFACT_SOURCE
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
+from formulaetl.sdk.data import ArtifactHandle
 from formulaetl.sdk.registry import register
 
 
@@ -16,6 +18,7 @@ class S3Source(BaseComponent):
     component_type = "s3_source"
     display_name = "S3 Source"
     category = "source"
+    capabilities = ARTIFACT_SOURCE
     config_schema = {
         "type": "object",
         "required": ["bucket", "key"],
@@ -63,30 +66,52 @@ class S3Source(BaseComponent):
                         f"S3Source (demo): object not found at {path}. "
                         f"Expected mock object under data/s3/"
                     )
-                raw = path.read_bytes()
-                ctx.emit(f"S3Source [demo]: s3://{bucket}/{key} → {path} ({len(raw)} bytes)")
+                handle = ArtifactHandle.from_path(
+                    path, content_type=None, temp=False
+                )
+                ctx.emit(
+                    f"S3Source [demo]: s3://{bucket}/{key} → {path} "
+                    f"({handle.size} bytes, sha256={handle.checksum})"
+                )
                 metrics.rows_out = 1
                 return ComponentResult(
-                    rows=[{"_s3_bucket": bucket, "_s3_key": key, "_size": len(raw)}],
+                    rows=[{"_s3_bucket": bucket, "_s3_key": key, "_size": handle.size}],
                     metrics=metrics,
-                    artifacts={"path": str(path), "bytes": raw, "bucket": bucket, "key": key},
+                    artifacts={
+                        "path": str(path),
+                        "bucket": bucket,
+                        "key": key,
+                        "artifact": handle.to_dict(),
+                    },
+                    artifact=handle,
                     side_effects={"mode": "demo", "local_path": str(path)},
                 )
 
-            # Real S3 via boto3
+            # Real S3 via boto3 — stream object to a temp file (not Body.read() into RAM)
             import boto3
 
             kwargs: dict[str, Any] = {"region_name": self.config.get("region", "us-east-1")}
             if self.config.get("endpoint_url"):
                 kwargs["endpoint_url"] = self.config["endpoint_url"]
             client = boto3.client("s3", **kwargs)
-            obj = client.get_object(Bucket=bucket, Key=key)
-            raw = obj["Body"].read()
-            ctx.emit(f"S3Source: downloaded s3://{bucket}/{key} ({len(raw)} bytes)")
+            staging = ctx.temp_dir() / bucket / key.replace("/", "_")
+            staging.parent.mkdir(parents=True, exist_ok=True)
+            client.download_file(Bucket=bucket, Key=key, Filename=str(staging))
+            handle = ArtifactHandle.from_path(staging, temp=True)
+            ctx.emit(
+                f"S3Source: downloaded s3://{bucket}/{key} → {staging} "
+                f"({handle.size} bytes)"
+            )
             metrics.rows_out = 1
             return ComponentResult(
-                rows=[{"_s3_bucket": bucket, "_s3_key": key, "_size": len(raw)}],
+                rows=[{"_s3_bucket": bucket, "_s3_key": key, "_size": handle.size}],
                 metrics=metrics,
-                artifacts={"bytes": raw, "bucket": bucket, "key": key},
-                side_effects={"mode": "aws"},
+                artifacts={
+                    "path": str(staging),
+                    "bucket": bucket,
+                    "key": key,
+                    "artifact": handle.to_dict(),
+                },
+                artifact=handle,
+                side_effects={"mode": "aws", "local_path": str(staging)},
             )

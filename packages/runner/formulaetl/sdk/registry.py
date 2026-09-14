@@ -45,6 +45,7 @@ def list_components() -> list[dict]:
             "category": cls.category,
             "config_schema": cls.config_schema,
             "parameters": cls.get_parameters(),
+            "capabilities": cls.capabilities.to_dict(),
         }
         for cls in _REGISTRY.values()
     ]

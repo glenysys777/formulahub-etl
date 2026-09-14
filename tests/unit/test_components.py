@@ -47,7 +47,11 @@ def test_s3_source_demo(work_dir: Path):
     result = c.run(ctx(work_dir))
     assert result.metrics.rows_out == 1
     assert result.side_effects["mode"] == "demo"
-    assert len(result.artifacts["bytes"]) > 100
+    assert result.artifact is not None
+    assert result.artifact.size and result.artifact.size > 100
+    assert result.artifact.checksum
+    assert Path(result.artifact.path).exists()
+    assert "bytes" not in result.artifacts
 
 
 def test_pgp_decrypt(work_dir: Path):
