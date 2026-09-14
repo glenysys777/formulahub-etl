@@ -1167,11 +1167,14 @@ select {
 
 .status-toast {
   margin: 0;
-  padding: 0.45rem 1.1rem;
-  font-size: 0.8rem;
-  color: var(--text);
+  padding: 0.55rem 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 550;
+  color: #0b3d1a;
   background: #e8f5e9;
   border-bottom: 1px solid #c8e6c9;
+  z-index: 5;
+  position: relative;
 }
 
 .status-toast.is-error {
