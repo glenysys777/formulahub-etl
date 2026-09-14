@@ -8,7 +8,7 @@ Claims in sales/README are **not** evidence. Each row is a statement we are will
 **Phase D+E merge tip:** `1b82aa5`  
 **Phase F merge tip:** `3d1d9c9`  
 **Phase G merge tip:** `5525b26`  
-**Phase I (this PR) tip:** see SHA below after merge / this branch tip  
+**Phase I (this PR) tip:** `a4978a1`  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.x · **pytest:** 9.x
 
@@ -22,9 +22,9 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` (default CI) | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q -m "not live and not bench"` | **162 passed**, 1 skipped (`RUN_CSV_1M`), 6 deselected (`live`+`bench`). `FORMULAETL_DEMO=1`. Not live AWS/SFTP. | this PR | 2026-09-14 |
+| A1 | Pytest suite on `tests/` (default CI) | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q -m "not live and not bench"` | **162 passed**, 1 skipped (`RUN_CSV_1M`), 6 deselected (`live`+`bench`). `FORMULAETL_DEMO=1`. Not live AWS/SFTP. | `a4978a1` | 2026-09-14 |
 | A2 | Web production build | PROVEN | `cd apps/web && npm run build` | Optional CI job `web-build` | `5525b26` | 2026-09-14 |
-| A3 | GitHub Actions CI on `main` / PRs | PROVEN | `.github/workflows/ci.yml` | pytest DEMO=1 `-m "not live and not bench"`; optional npm build. **No live cloud. No heavy bench.** | this PR | 2026-09-14 |
+| A3 | GitHub Actions CI on `main` / PRs | PROVEN | `.github/workflows/ci.yml` | pytest DEMO=1 `-m "not live and not bench"`; optional npm build. **No live cloud. No heavy bench.** | `a4978a1` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
 | A5 | CSV 10K streaming benchmark | PROVEN | Phase C | Unchanged | `dce51a6` | 2026-09-14 |
 
@@ -103,11 +103,11 @@ Reconciliation invariant (must hold or test fails): **`N = R + D + L`** where
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| J0 | Bench harness + pytest markers | PROVEN **LOCAL/DEMO** | `tests/bench/`, `pytest` marker `bench`, `make bench` / `RUN_BENCH=1` | Heavy scales skipped unless `RUN_BENCH=1`; CI excludes `-m bench` | this PR | 2026-09-14 |
-| J1 | Always-on correctness (small N) | PROVEN **LOCAL/DEMO** | `pytest tests/bench -m "not bench"` | plan math + 200-row + file→file reconcile | this PR | 2026-09-14 |
-| J2 | Scale 10K full wedge | PROVEN **LOCAL/DEMO** | `RUN_BENCH=1 … local_wedge_bench.py --scales 10000` | See table below | this PR | 2026-09-14 |
-| J3 | Scale 100K full wedge | PROVEN **LOCAL/DEMO** | `--scales 100000` | See table below | this PR | 2026-09-14 |
-| J4 | Scale 1M full wedge | PROVEN **LOCAL/DEMO** | `--scales 1000000` | See table below | this PR | 2026-09-14 |
+| J0 | Bench harness + pytest markers | PROVEN **LOCAL/DEMO** | `tests/bench/`, `pytest` marker `bench`, `make bench` / `RUN_BENCH=1` | Heavy scales skipped unless `RUN_BENCH=1`; CI excludes `-m bench` | `a4978a1` | 2026-09-14 |
+| J1 | Always-on correctness (small N) | PROVEN **LOCAL/DEMO** | `pytest tests/bench -m "not bench"` | plan math + 200-row + file→file reconcile | `a4978a1` | 2026-09-14 |
+| J2 | Scale 10K full wedge | PROVEN **LOCAL/DEMO** | `RUN_BENCH=1 … local_wedge_bench.py --scales 10000` | See table below | `a4978a1` | 2026-09-14 |
+| J3 | Scale 100K full wedge | PROVEN **LOCAL/DEMO** | `--scales 100000` | See table below | `a4978a1` | 2026-09-14 |
+| J4 | Scale 1M full wedge | PROVEN **LOCAL/DEMO** | `--scales 1000000` | See table below | `a4978a1` | 2026-09-14 |
 | J5 | Scale 10M optional | UNPROVEN / skipped | `BENCH_INCLUDE_10M=1 make bench-10m` | Not run (memory/timeboxed; ~1.4 GiB RSS at 1M suggests 10M may OOM on this host) | — | — |
 
 ### LOCAL/DEMO scale numbers (agent host, 2026-09-14)
