@@ -82,7 +82,7 @@ function ContextKvTable({
                     );
                     commitRows(next);
                   }}
-                  placeholder="value"
+                  placeholder="param value"
                   data-testid={`context-value-${index}`}
                   aria-label={`Context value ${index + 1}`}
                 />
