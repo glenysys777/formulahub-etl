@@ -16,6 +16,7 @@ const required = [
   "src/paths.js",
   "src/preload.js",
   "build/icon.png",
+  "build/icon.icns",
   "README.md",
 ];
 

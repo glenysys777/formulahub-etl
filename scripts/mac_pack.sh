@@ -74,7 +74,12 @@ mkdir -p "${MACOS_DIR}" "${RES_DIR}"
 
 if [[ -f "${ICON_SRC}" ]]; then
   cp "${ICON_SRC}" "${RES_DIR}/icon.png"
-  # Prefer .icns when present (electron-builder / iconutil); PNG is fine for Finder on modern macOS with CFBundleIconFile fallback via icns conversion note.
+fi
+ICNS_SRC="${ROOT}/apps/desktop/build/icon.icns"
+if [[ -f "${ICNS_SRC}" ]]; then
+  cp "${ICNS_SRC}" "${RES_DIR}/AppIcon.icns"
+elif [[ -f "${ICON_SRC}" ]]; then
+  # Fallback: Finder prefers .icns; PNG kept as secondary resource
   cp "${ICON_SRC}" "${RES_DIR}/AppIcon.png"
 fi
 
