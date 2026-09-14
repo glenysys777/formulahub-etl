@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useStudioNodeActions } from "./studioActions";
 
 /** Visual category → CSS class + accent (distinct colors, original glyphs — no vendor logos) */
 const CATEGORY: Record<string, string> = {
@@ -221,6 +222,38 @@ export function categoryForType(type: string): string {
   return CATEGORY[type] || "utility";
 }
 
+export function isMapperType(t: string): boolean {
+  return t === "column_map" || t === "tmap";
+}
+
+export function isLookupType(t: string): boolean {
+  return t === "lookup_join";
+}
+
+function mappingCount(config: Record<string, unknown>): number {
+  const m = config.mappings ?? config.rename;
+  if (Array.isArray(m)) return m.length;
+  if (typeof m === "string") return m.split(/\n/).map((s) => s.trim()).filter(Boolean).length;
+  if (m && typeof m === "object") return Object.keys(m as Record<string, unknown>).length;
+  return 0;
+}
+
+function MapGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <rect x="1.5" y="3" width="4.5" height="10" rx="1" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="10" y="3" width="4.5" height="10" rx="1" stroke="currentColor" strokeWidth="1.3" />
+      <path
+        d="M6.5 8h3M8.5 6.5 10 8l-1.5 1.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function summary(type: string, config: Record<string, unknown>): string {
   if (type === "s3_source") return `s3://${config.bucket}/${config.key}`;
   if (type === "kafka_source")
@@ -334,8 +367,9 @@ function friendlyLabel(type: string, label: string): string {
   return label || type;
 }
 
-export const EtlNode = memo(function EtlNode({ data, selected }: NodeProps) {
+export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) {
   const d = data as EtlNodeData;
+  const actions = useStudioNodeActions();
   const cat = categoryForType(d.componentType);
   const accent = HANDLE_COLORS[cat] || HANDLE_COLORS.utility;
   const hasRejects =
@@ -343,8 +377,9 @@ export const EtlNode = memo(function EtlNode({ data, selected }: NodeProps) {
     (d.componentType === "tmap" && Boolean(d.config?.reject_unmatched));
   const runVisual = d.runVisual || "idle";
   const title = friendlyLabel(d.componentType, d.label);
-  const isMapper = d.componentType === "tmap" || d.componentType === "column_map";
-  const isLookup = d.componentType === "lookup_join";
+  const isMapper = isMapperType(d.componentType);
+  const isLookup = isLookupType(d.componentType);
+  const maps = isMapper ? mappingCount(d.config) : 0;
   const bodySummary = useMemo(
     () => summary(d.componentType, d.config),
     [d.componentType, d.config],
@@ -352,13 +387,18 @@ export const EtlNode = memo(function EtlNode({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`etl-node cat-${cat} ${selected ? "selected" : ""} run-${runVisual}${isMapper ? " is-mapper" : ""}`}
+      className={`etl-node cat-${cat} ${selected ? "selected" : ""} run-${runVisual}${isMapper ? " is-mapper" : ""}${isLookup ? " is-lookup" : ""}`}
+      data-testid={isMapper ? "etl-mapper-node" : isLookup ? "etl-lookup-node" : "etl-node"}
+      onDoubleClick={(e) => {
+        e.preventDefault();
+        actions?.activateNode(id, d.componentType);
+      }}
       title={
         isMapper
-          ? "Column logic + Variables — double-click to open Field Mapper"
+          ? "Double-click to open Field Mapper"
           : isLookup
-            ? "Merge two sources: primary → left/in, lookup → right"
-            : undefined
+            ? "Double-click to edit join keys — primary → left/in, lookup → right"
+            : "Double-click to open Node Inspector"
       }
     >
       {runVisual === "running" && selected && <span className="etl-progress-ring" aria-hidden />}
@@ -404,10 +444,48 @@ export const EtlNode = memo(function EtlNode({ data, selected }: NodeProps) {
           <ComponentGlyph type={d.componentType} />
         </span>
         <span className="etl-node-title">{title}</span>
+        {isMapper ? (
+          <button
+            type="button"
+            className="etl-map-btn nodrag nopan"
+            data-testid="etl-map-btn"
+            title="Open Field Mapper"
+            aria-label="Open Field Mapper"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              actions?.openMapper(id);
+            }}
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              actions?.openMapper(id);
+            }}
+          >
+            <MapGlyph />
+          </button>
+        ) : null}
       </div>
       <div className="etl-node-body" title={bodySummary}>
         {bodySummary}
       </div>
+      {isMapper ? (
+        <div className="etl-node-affordance">
+          <span className="etl-map-badge" data-testid="etl-map-badge">
+            {maps ? `Map · ${maps}` : "Map"}
+          </span>
+          <span className="etl-map-hint" data-testid="etl-map-hint">
+            Double-click to map
+          </span>
+        </div>
+      ) : isLookup ? (
+        <div className="etl-node-affordance">
+          <span className="etl-join-badge">Join</span>
+          <span className="etl-map-hint" data-testid="etl-join-hint">
+            Double-click for join keys
+          </span>
+        </div>
+      ) : null}
       <Handle
         type="source"
         position={Position.Right}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentInfo, ParamDef } from "./api";
 import { VariablesPanel } from "./VariablesPanel";
 
@@ -28,6 +28,8 @@ type Props = {
   onChange: (key: string, value: unknown) => void;
   onConfigReplace: (config: Record<string, unknown>) => void;
   onMetadataChange?: (metadata: Record<string, unknown>) => void;
+  /** Double-click on Lookup Join focuses join fields in this inspector. */
+  focusJoin?: boolean;
 };
 
 function isEmpty(value: unknown): boolean {
@@ -134,6 +136,7 @@ export function NodeInspector({
   onChange,
   onConfigReplace,
   onMetadataChange,
+  focusJoin = false,
 }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [jsonDraft, setJsonDraft] = useState("");
@@ -144,6 +147,14 @@ export function NodeInspector({
     () => missingRequiredKeys(config, parameters),
     [config, parameters],
   );
+
+  useEffect(() => {
+    if (!focusJoin || componentType !== "lookup_join") return;
+    const el =
+      (document.getElementById("inspector-join-how") as HTMLElement | null) ||
+      (document.querySelector("[data-testid='join-config'] select, [data-testid='join-config'] input:not([readonly])") as HTMLElement | null);
+    el?.focus();
+  }, [focusJoin, componentType, nodeId]);
 
   const openAdvanced = () => {
     setJsonDraft(JSON.stringify(config ?? {}, null, 2));
@@ -169,7 +180,9 @@ export function NodeInspector({
 
   const tip =
     componentType === "lookup_join"
-      ? "Merge two sources here: wire the primary stream to the left/in handle and the lookup stream to the right handle (or set Lookup file). Join keys below must match."
+      ? focusJoin
+        ? "Join configuration — set type, match, and keys below. Wire primary → left/in and lookup → right (or set Lookup file)."
+        : "Merge two sources here: wire the primary stream to the left/in handle and the lookup stream to the right handle (or set Lookup file). Join keys below must match."
       : componentType === "tmap"
         ? "Field Mapper is column logic — Input columns, Variables (named expressions in the middle), and Output mappings. To merge two tables first, use Lookup Join."
         : componentType === "column_map"
@@ -218,7 +231,12 @@ export function NodeInspector({
         </div>
       )}
 
-      <div className="inspector-fields">
+      <div
+        className={`inspector-fields${componentType === "lookup_join" ? " join-config" : ""}${
+          focusJoin ? " is-focused" : ""
+        }`}
+        data-testid={componentType === "lookup_join" ? "join-config" : undefined}
+      >
         {parameters.length === 0 ? (
           <p className="empty-hint">No parameter schema for this component.</p>
         ) : (
@@ -226,6 +244,10 @@ export function NodeInspector({
             const requiredMissing = missing.includes(param.key);
             const value = displayValue(param, config);
             const fieldClass = `field${requiredMissing ? " field-missing" : ""}`;
+            const fieldId =
+              componentType === "lookup_join" && param.key === "how"
+                ? "inspector-join-how"
+                : undefined;
 
             if (param.type === "boolean") {
               return (
@@ -249,11 +271,12 @@ export function NodeInspector({
             if (param.type === "select") {
               return (
                 <div className={fieldClass} key={param.key}>
-                  <label>
+                  <label htmlFor={fieldId}>
                     {param.label}
                     {param.required ? " *" : ""}
                   </label>
                   <select
+                    id={fieldId}
                     value={String(value)}
                     onChange={(e) => onChange(param.key, e.target.value)}
                   >

@@ -625,6 +625,21 @@ select {
   margin-bottom: 0.15rem;
 }
 
+.join-config.is-focused {
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  animation: join-focus-in 0.4s ease-out;
+}
+
+@keyframes join-focus-in {
+  from {
+    box-shadow: 0 0 0 0 var(--accent-dim);
+  }
+  to {
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+}
+
 .variables-panel {
   display: flex;
   flex-direction: column;
@@ -882,10 +897,17 @@ select {
   border-radius: 12px;
   box-shadow: var(--shadow);
   transition: border-color 0.2s, box-shadow 0.25s, transform 0.2s;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
 }
 
 .etl-node.is-mapper {
-  min-width: 200px;
+  min-width: 228px;
+}
+
+.etl-node.is-lookup {
+  min-width: 216px;
 }
 
 .etl-node.selected {
@@ -906,6 +928,11 @@ select {
 
 .etl-node-title {
   line-height: 1.2;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .etl-node-icon {
@@ -931,15 +958,86 @@ select {
 }
 
 .etl-node-body {
-  padding: 0.1rem 0.8rem 0.7rem;
+  padding: 0.1rem 0.8rem 0.35rem;
   font-size: 0.66rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  max-width: 220px;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.85;
+}
+
+.etl-node-affordance {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.8rem 0.55rem;
+  pointer-events: auto;
+}
+
+.etl-map-badge,
+.etl-join-badge {
+  flex-shrink: 0;
+  font-size: 0.64rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.16rem 0.4rem;
+  border-radius: 6px;
+  line-height: 1.2;
+}
+
+.etl-map-badge {
+  color: #9a6700;
+  background: var(--transform-bg);
+  border: 1px solid #ffe0a3;
+}
+
+.etl-join-badge {
+  color: #7c4a00;
+  background: #fff4e5;
+  border: 1px solid #ffd6a8;
+}
+
+.etl-map-hint {
+  font-size: 0.7rem;
+  font-weight: 550;
+  color: var(--text-dim);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.etl-map-btn {
+  appearance: none;
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--accent);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  pointer-events: auto;
+  transition: background 0.12s, border-color 0.12s, transform 0.1s;
+}
+
+.etl-map-btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.etl-map-btn:active {
+  transform: scale(0.96);
+}
+
+.etl-map-btn svg {
+  display: block;
 }
 
 .cat-source { border-left-color: var(--source); }
@@ -1178,18 +1276,35 @@ select {
 
 .btn-open-mapper {
   width: 100%;
-  min-height: 44px;
-  font-size: 0.92rem;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem;
+  font-size: 0.98rem;
   font-weight: 650;
   border-radius: 12px;
   letter-spacing: -0.01em;
+  padding: 0.55rem 0.9rem;
+}
+
+.btn-open-mapper-label {
+  line-height: 1.2;
+}
+
+.btn-open-mapper-keys {
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  opacity: 0.88;
 }
 
 .mapper-hint {
   margin: 0;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  line-height: 1.35;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  line-height: 1.4;
 }
 
 .discover-msg {

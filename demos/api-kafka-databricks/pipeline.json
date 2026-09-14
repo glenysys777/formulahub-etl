@@ -1,7 +1,7 @@
 {
   "id": "demo-api-kafka-databricks",
   "name": "Kafka → Field Mapper → Databricks Job",
-  "description": "Company pattern: read order events from Kafka (demo fixture), map fields, trigger a Databricks notebook/job run (demo sidecar). No real broker or workspace required with FORMULAETL_DEMO=1.",
+  "description": "Company pattern: read order events from Kafka (demo fixture), map fields with Variables, trigger a Databricks notebook/job run (demo sidecar). No real broker or workspace required with FORMULAETL_DEMO=1.",
   "version": "1.0",
   "nodes": [
     {
@@ -22,22 +22,26 @@
       "position": { "x": 40, "y": 180 }
     },
     {
-      "id": "map",
-      "type": "column_map",
+      "id": "field_mapper",
+      "type": "tmap",
       "label": "Field Mapper",
       "config": {
+        "variables": [
+          "amount_f=float(amount)",
+          "sku_upper=upper(product_sku)"
+        ],
         "mappings": [
-          "order_id:order_id",
-          "customer_id:customer_id",
-          "customer_name:customer_name",
-          "email:email",
-          "product_sku:product_sku",
-          "quantity:quantity",
-          "amount:amount",
-          "order_date:order_date",
-          "status:status",
-          "currency:currency",
-          "channel:channel"
+          "order_id=order_id",
+          "customer_id=customer_id",
+          "customer_name=customer_name",
+          "email=email",
+          "product_sku=sku_upper",
+          "quantity=quantity",
+          "amount=amount_f",
+          "order_date=order_date",
+          "status=status",
+          "currency=currency",
+          "channel=channel"
         ],
         "drop_unmapped": false
       },
@@ -63,8 +67,8 @@
     }
   ],
   "edges": [
-    { "id": "e1", "source": "kafka", "target": "map" },
-    { "id": "e2", "source": "map", "target": "databricks" }
+    { "id": "e1", "source": "kafka", "target": "field_mapper" },
+    { "id": "e2", "source": "field_mapper", "target": "databricks" }
   ],
   "metadata": {
     "demo": true,
