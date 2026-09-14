@@ -25,17 +25,14 @@ import {
   type RunStatus,
   type ValidateResult,
 } from "./api";
-import { EtlNode, ComponentGlyph, categoryForType, CAT_COLORS, type EtlNodeData, type RunVisual } from "./EtlNode";
+import { EtlNode, ComponentGlyph, categoryForType, CAT_COLORS, isMapperType, isLookupType, type EtlNodeData, type RunVisual } from "./EtlNode";
 import { NodeInspector, missingRequiredKeys } from "./NodeInspector";
 import { SchemaMapper } from "./SchemaMapper";
+import { StudioNodeActionsContext, type StudioNodeActions } from "./studioActions";
 
 const DEMO_ID = "demo-api-kafka-databricks";
 const DEFAULT_PROMPT =
   "Read orders from a Kafka topic, map fields, and trigger a Databricks notebook job.";
-
-function isMapperType(t: string): boolean {
-  return t === "column_map" || t === "tmap";
-}
 
 const PALETTE_ORDER = [
   "kafka_source",
@@ -240,6 +237,7 @@ function AppCanvas() {
   const [apiOk, setApiOk] = useState(false);
   const [components, setComponents] = useState<ComponentInfo[]>([]);
   const [mapperOpen, setMapperOpen] = useState(false);
+  const [inspectorFocus, setInspectorFocus] = useState<"inspector" | "join" | null>(null);
   const [discoverBusy, setDiscoverBusy] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState<string | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
@@ -251,11 +249,16 @@ function AppCanvas() {
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const pipelineRef = useRef(pipeline);
+  const selectedIdRef = useRef(selectedId);
+  const mapperOpenRef = useRef(mapperOpen);
+  const keepMapperOpenRef = useRef(false);
   const { screenToFlowPosition } = useReactFlow();
 
   nodesRef.current = nodes;
   edgesRef.current = edges;
   pipelineRef.current = pipeline;
+  selectedIdRef.current = selectedId;
+  mapperOpenRef.current = mapperOpen;
 
   const componentByType = useMemo(() => {
     const map: Record<string, ComponentInfo> = {};
@@ -303,6 +306,7 @@ function AppCanvas() {
       setNodes(flow.nodes);
       setEdges(flow.edges);
       setSelectedId(null);
+      setInspectorFocus(null);
       setRun(null);
       try {
         const sched = await api.getSchedule(p.id);
@@ -410,6 +414,117 @@ function AppCanvas() {
     () => nodes.find((n) => n.id === selectedId) || null,
     [nodes, selectedId],
   );
+
+  const scrollInspectorIntoView = useCallback((join?: boolean) => {
+    requestAnimationFrame(() => {
+      const section = document.querySelector(".inspector-section");
+      section?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (join) {
+        document.querySelector("[data-testid='join-config']")?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }
+    });
+  }, []);
+
+  const openMapper = useCallback((nodeId: string) => {
+    keepMapperOpenRef.current = true;
+    selectedIdRef.current = nodeId;
+    setSelectedId(nodeId);
+    setDiscoverMsg(null);
+    setInspectorFocus(null);
+    setMapperOpen(true);
+    queueMicrotask(() => {
+      keepMapperOpenRef.current = false;
+    });
+  }, []);
+
+  const activateNode = useCallback(
+    (nodeId: string, componentType: string) => {
+      selectedIdRef.current = nodeId;
+      setSelectedId(nodeId);
+      setDiscoverMsg(null);
+      if (isMapperType(componentType)) {
+        keepMapperOpenRef.current = true;
+        setInspectorFocus(null);
+        setMapperOpen(true);
+        queueMicrotask(() => {
+          keepMapperOpenRef.current = false;
+        });
+        return;
+      }
+      setMapperOpen(false);
+      if (isLookupType(componentType)) {
+        setInspectorFocus("join");
+        scrollInspectorIntoView(true);
+        return;
+      }
+      setInspectorFocus("inspector");
+      scrollInspectorIntoView(false);
+    },
+    [scrollInspectorIntoView],
+  );
+
+  const studioActions = useMemo<StudioNodeActions>(
+    () => ({ openMapper, activateNode }),
+    [openMapper, activateNode],
+  );
+
+  const onNodeClick = useCallback((_: unknown, n: Node) => {
+    const prevId = selectedIdRef.current;
+    selectedIdRef.current = n.id;
+    setSelectedId(n.id);
+    setDiscoverMsg(null);
+    if (keepMapperOpenRef.current) {
+      keepMapperOpenRef.current = false;
+      return;
+    }
+    if (n.id === prevId) {
+      // Same already-selected node: do not close mapper (first click of a
+      // double-click used to unmount the overlay and made open feel laggy).
+      return;
+    }
+    setInspectorFocus(null);
+    setMapperOpen(false);
+  }, []);
+
+  const onNodeDoubleClick = useCallback(
+    (_: unknown, n: Node) => {
+      const d = n.data as EtlNodeData;
+      activateNode(n.id, d.componentType);
+    },
+    [activateNode],
+  );
+
+  const onPaneClick = useCallback(() => {
+    setSelectedId(null);
+    setDiscoverMsg(null);
+    setInspectorFocus(null);
+    setMapperOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (mapperOpenRef.current) return;
+      const id = selectedIdRef.current;
+      if (!id) return;
+      const node = nodesRef.current.find((n) => n.id === id);
+      if (!node) return;
+      const d = node.data as EtlNodeData;
+      if (!isMapperType(d.componentType)) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      const editing =
+        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean(el?.isContentEditable);
+      if (e.key !== "Enter") return;
+      if (editing && !e.metaKey && !e.ctrlKey) return;
+      e.preventDefault();
+      openMapper(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openMapper]);
 
   const schedulePersist = useCallback(() => {
     if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -682,6 +797,7 @@ function AppCanvas() {
   const selectedData = selected ? (selected.data as EtlNodeData) : null;
 
   return (
+    <StudioNodeActionsContext.Provider value={studioActions}>
     <div className="app">
       <header className="topbar">
         <div className="brand">
@@ -801,16 +917,15 @@ function AppCanvas() {
             nodeTypes={nodeTypes}
             fitView
             onlyRenderVisibleElements
+            nodesDraggable
+            elementsSelectable
+            selectNodesOnDrag={false}
+            nodeDragThreshold={8}
             onDrop={(e) => void onCanvasDrop(e)}
             onDragOver={onCanvasDragOver}
-            onNodeClick={(_, n) => { setSelectedId(n.id); setDiscoverMsg(null); setMapperOpen(false); }}
-            onNodeDoubleClick={(_, n) => {
-              setSelectedId(n.id);
-              setDiscoverMsg(null);
-              const d = n.data as EtlNodeData;
-              if (isMapperType(d.componentType)) setMapperOpen(true);
-            }}
-            onPaneClick={() => { setSelectedId(null); setDiscoverMsg(null); setMapperOpen(false); }}
+            onNodeClick={onNodeClick}
+            onNodeDoubleClick={onNodeDoubleClick}
+            onPaneClick={onPaneClick}
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#d2d2d7" />
@@ -1056,14 +1171,23 @@ function AppCanvas() {
                       type="button"
                       className="btn btn-primary btn-open-mapper"
                       data-testid="open-schema-mapper"
-                      title="Map source columns to targets"
-                      onClick={() => setMapperOpen(true)}
+                      title="Open Field Mapper (Enter or ⌘↵)"
+                      aria-keyshortcuts="Enter Meta+Enter Control+Enter"
+                      onClick={() => openMapper(selected.id)}
                     >
-                      Open Field Mapper
+                      <span className="btn-open-mapper-label">Open Field Mapper</span>
+                      <span className="btn-open-mapper-keys">Enter · ⌘↵</span>
                     </button>
                     <p className="mapper-hint">
-                      Double-click the node — large Input · Variables · Output mapper. For merging two
+                      Double-click the node or press Enter — Input · Variables · Output. To merge two
                       sources first, use Lookup Join.
+                    </p>
+                  </div>
+                )}
+                {isLookupType(selectedData.componentType) && (
+                  <div className="inspector-actions">
+                    <p className="mapper-hint" data-testid="lookup-inspector-hint">
+                      Double-click the node to jump to join type, match, and keys below.
                     </p>
                   </div>
                 )}
@@ -1118,6 +1242,7 @@ function AppCanvas() {
                   onChange={updateSelectedConfig}
                   onConfigReplace={replaceSelectedConfig}
                   onMetadataChange={updatePipelineMetadata}
+                  focusJoin={inspectorFocus === "join"}
                 />
               </>
             ) : (
@@ -1150,6 +1275,7 @@ function AppCanvas() {
         <span>{API_BASE}</span>
       </footer>
     </div>
+    </StudioNodeActionsContext.Provider>
   );
 }
 
