@@ -430,6 +430,75 @@ select {
   line-height: 1.4;
 }
 
+.contexts-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.contexts-help code {
+  font-size: 0.62rem;
+}
+
+.contexts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.contexts-table th,
+.contexts-table td {
+  text-align: left;
+  padding: 0.2rem 0.15rem;
+  vertical-align: middle;
+}
+
+.contexts-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.65rem;
+}
+
+.contexts-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.72rem;
+  background: var(--bg-1);
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.contexts-row-delete {
+  padding: 0.15rem 0.35rem;
+  font-size: 0.7rem;
+}
+
+.contexts-set-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border, #e5e5e5);
+}
+
+.contexts-inline {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.contexts-inline .schedule-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.contexts-inline-wrap {
+  flex-wrap: wrap;
+}
+
 .field-label {
   font-size: 0.68rem;
   color: var(--text-muted);

@@ -177,3 +177,213 @@ export function collectTemplateText(config: Record<string, unknown>): string {
 export function supportsVariables(componentType: string): boolean {
   return componentType === "databricks_sql" || componentType === "databricks_job";
 }
+
+/** Starter keys for a new Job Context set (empty values — founder fills them). */
+export const STARTER_CONTEXT_KEYS = ["env", "catalog", "schema"] as const;
+
+export const DEFAULT_CONTEXT_SET_NAMES = ["DEV", "QA", "PROD"] as const;
+
+export function emptyStarterSet(): Record<string, unknown> {
+  const set: Record<string, unknown> = {};
+  for (const key of STARTER_CONTEXT_KEYS) set[key] = "";
+  return set;
+}
+
+export function defaultContextSets(): Record<string, Record<string, unknown>> {
+  const sets: Record<string, Record<string, unknown>> = {};
+  for (const name of DEFAULT_CONTEXT_SET_NAMES) {
+    sets[name] = emptyStarterSet();
+  }
+  return sets;
+}
+
+/**
+ * Ensure pipeline metadata has a Job Contexts block.
+ * Seeds DEV/QA/PROD with starter keys when sets are missing or empty.
+ * Does not overwrite existing non-empty sets.
+ */
+export function ensureContextsMetadata(
+  metadata?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const next = { ...(metadata || {}) };
+  const { active, sets } = parseContexts(next);
+  const hasSets = Object.keys(sets).length > 0;
+  const seededSets = hasSets ? sets : defaultContextSets();
+  const seededActive =
+    active && seededSets[active]
+      ? active
+      : Object.keys(seededSets).includes("DEV")
+        ? "DEV"
+        : Object.keys(seededSets)[0] || "DEV";
+  next.contexts = {
+    ...((next.contexts as Record<string, unknown>) || {}),
+    active: seededActive,
+    sets: seededSets,
+  };
+  if (!next.run_params || typeof next.run_params !== "object" || Array.isArray(next.run_params)) {
+    next.run_params = { run_date: "", job_name: "" };
+  } else {
+    const rp = { ...(next.run_params as Record<string, unknown>) };
+    if (!Object.prototype.hasOwnProperty.call(rp, "run_date")) rp.run_date = "";
+    if (!Object.prototype.hasOwnProperty.call(rp, "job_name")) rp.job_name = "";
+    next.run_params = rp;
+  }
+  return next;
+}
+
+export function setActiveContext(
+  metadata: Record<string, unknown> | null | undefined,
+  name: string,
+): Record<string, unknown> {
+  const base = ensureContextsMetadata(metadata);
+  const { sets } = parseContexts(base);
+  if (!sets[name]) return base;
+  return {
+    ...base,
+    contexts: {
+      ...((base.contexts as Record<string, unknown>) || {}),
+      active: name,
+      sets,
+    },
+  };
+}
+
+export function setContextEntries(
+  metadata: Record<string, unknown> | null | undefined,
+  setName: string,
+  entries: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = ensureContextsMetadata(metadata);
+  const { active, sets } = parseContexts(base);
+  return {
+    ...base,
+    contexts: {
+      ...((base.contexts as Record<string, unknown>) || {}),
+      active: sets[active] ? active : setName,
+      sets: { ...sets, [setName]: { ...entries } },
+    },
+  };
+}
+
+export function addContextSet(
+  metadata: Record<string, unknown> | null | undefined,
+  name: string,
+  source?: Record<string, unknown>,
+): Record<string, unknown> {
+  const trimmed = name.trim();
+  if (!trimmed) return ensureContextsMetadata(metadata);
+  const base = ensureContextsMetadata(metadata);
+  const { active, sets } = parseContexts(base);
+  if (sets[trimmed]) return base;
+  const nextSets = {
+    ...sets,
+    [trimmed]: source ? { ...source } : emptyStarterSet(),
+  };
+  return {
+    ...base,
+    contexts: {
+      ...((base.contexts as Record<string, unknown>) || {}),
+      active: active || trimmed,
+      sets: nextSets,
+    },
+  };
+}
+
+export function duplicateContextSet(
+  metadata: Record<string, unknown> | null | undefined,
+  fromName: string,
+  toName: string,
+): Record<string, unknown> {
+  const { sets } = parseContexts(metadata);
+  const source = sets[fromName];
+  if (!source) return ensureContextsMetadata(metadata);
+  return addContextSet(metadata, toName, source);
+}
+
+export function deleteContextSet(
+  metadata: Record<string, unknown> | null | undefined,
+  name: string,
+): Record<string, unknown> {
+  const base = ensureContextsMetadata(metadata);
+  const { active, sets } = parseContexts(base);
+  if (!sets[name]) return base;
+  const nextSets = { ...sets };
+  delete nextSets[name];
+  // Keep at least one set — reseed defaults if emptied.
+  const finalSets = Object.keys(nextSets).length > 0 ? nextSets : defaultContextSets();
+  let nextActive = active === name ? "" : active;
+  if (!nextActive || !finalSets[nextActive]) {
+    nextActive = Object.keys(finalSets).includes("DEV")
+      ? "DEV"
+      : Object.keys(finalSets)[0];
+  }
+  return {
+    ...base,
+    contexts: {
+      ...((base.contexts as Record<string, unknown>) || {}),
+      active: nextActive,
+      sets: finalSets,
+    },
+  };
+}
+
+export function renameContextSet(
+  metadata: Record<string, unknown> | null | undefined,
+  fromName: string,
+  toName: string,
+): Record<string, unknown> {
+  const trimmed = toName.trim();
+  if (!trimmed || trimmed === fromName) return ensureContextsMetadata(metadata);
+  const base = ensureContextsMetadata(metadata);
+  const { active, sets } = parseContexts(base);
+  if (!sets[fromName] || sets[trimmed]) return base;
+  const nextSets = { ...sets };
+  nextSets[trimmed] = { ...nextSets[fromName] };
+  delete nextSets[fromName];
+  return {
+    ...base,
+    contexts: {
+      ...((base.contexts as Record<string, unknown>) || {}),
+      active: active === fromName ? trimmed : active,
+      sets: nextSets,
+    },
+  };
+}
+
+export function setRunParam(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+  value: string,
+): Record<string, unknown> {
+  const base = ensureContextsMetadata(metadata);
+  const rp =
+    base.run_params && typeof base.run_params === "object" && !Array.isArray(base.run_params)
+      ? { ...(base.run_params as Record<string, unknown>) }
+      : {};
+  rp[key] = value;
+  return { ...base, run_params: rp };
+}
+
+/** Stable key/value rows for the editor (preserves insertion order of object keys). */
+export function contextEntriesToRows(
+  entries: Record<string, unknown>,
+): { key: string; value: string }[] {
+  return Object.keys(entries).map((key) => ({
+    key,
+    value: entries[key] == null ? "" : String(entries[key]),
+  }));
+}
+
+export function rowsToContextEntries(
+  rows: { key: string; value: string }[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const row of rows) {
+    const k = row.key.trim();
+    if (!k) continue;
+    // First wins if duplicate keys after trim.
+    if (Object.prototype.hasOwnProperty.call(out, k)) continue;
+    out[k] = row.value;
+  }
+  return out;
+}

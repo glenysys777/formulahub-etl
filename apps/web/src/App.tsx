@@ -31,6 +31,8 @@ import { NodeInspector, missingRequiredKeys } from "./NodeInspector";
 import { SchemaMapper } from "./SchemaMapper";
 import { QuickAddPalette } from "./QuickAddPalette";
 import { StudioNodeActionsContext, type StudioNodeActions } from "./studioActions";
+import { JobContextsPanel } from "./JobContextsPanel";
+import { parseContexts } from "./vars";
 
 const DEMO_ID = "demo-api-kafka-databricks";
 const DEFAULT_PROMPT =
@@ -261,11 +263,19 @@ function AppCanvas() {
   /** Secondary rail panels — collapsed by default so Node Inspector stays visible. */
   const [railOpen, setRailOpen] = useState<{
     pipeline: boolean;
+    contexts: boolean;
     schedule: boolean;
     lastRun: boolean;
     logs: boolean;
     validate: boolean;
-  }>({ pipeline: false, schedule: false, lastRun: false, logs: false, validate: false });
+  }>({
+    pipeline: false,
+    contexts: false,
+    schedule: false,
+    lastRun: false,
+    logs: false,
+    validate: false,
+  });
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDetailsElement | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -351,6 +361,8 @@ function AppCanvas() {
       setSelectedId(null);
       setInspectorFocus(null);
       setRun(null);
+      const hasContexts = Object.keys(parseContexts(p.metadata).sets).length > 0;
+      setRailOpen((r) => ({ ...r, contexts: hasContexts }));
       try {
         const sched = await api.getSchedule(p.id);
         setScheduleEnabled(Boolean(sched.enabled));
@@ -945,10 +957,15 @@ function AppCanvas() {
     schedulePersist();
   };
 
-  const updatePipelineMetadata = (metadata: Record<string, unknown>) => {
-    setPipeline((p) => (p ? { ...p, metadata } : p));
-    schedulePersist();
-  };
+  const updatePipelineMetadata = useCallback(
+    (metadata: Record<string, unknown>) => {
+      setPipeline((p) => (p ? { ...p, metadata } : p));
+      schedulePersist();
+    },
+    [schedulePersist],
+  );
+
+  const contextsRailOpen = railOpen.contexts;
 
   const onSavePipeline = async () => {
     setSaveBusy(true);
@@ -1460,6 +1477,34 @@ function AppCanvas() {
                 <p className="empty-hint">Use the palette, New blank, Load demo, or AI Build.</p>
               )
             )}
+          </div>
+
+          <div
+            className={`sidebar-section rail-accordion${contextsRailOpen ? " is-open" : ""}`}
+            data-testid="job-contexts-section"
+          >
+            <button
+              type="button"
+              className="rail-accordion-toggle"
+              data-testid="rail-contexts-toggle"
+              aria-expanded={contextsRailOpen}
+              onClick={() => setRailOpen((r) => ({ ...r, contexts: !r.contexts }))}
+            >
+              <h3>Job Contexts</h3>
+              <span className="rail-accordion-chevron" aria-hidden>
+                {contextsRailOpen ? "▾" : "▸"}
+              </span>
+            </button>
+            {contextsRailOpen &&
+              (pipeline ? (
+                <JobContextsPanel
+                  pipelineId={pipeline.id}
+                  metadata={pipeline.metadata}
+                  onMetadataChange={updatePipelineMetadata}
+                />
+              ) : (
+                <p className="empty-hint">Open a pipeline to edit Job Contexts.</p>
+              ))}
           </div>
 
           <div className={`sidebar-section rail-accordion${railOpen.schedule ? " is-open" : ""}`}>

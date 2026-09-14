@@ -107,8 +107,8 @@ export function VariablesPanel({
 
       {contextNames.length === 0 && (
         <p className="empty-hint variables-empty">
-          Add <code>metadata.contexts</code> (DEV/QA/PROD) to unlock context switching.
-          See docs/CONTEXTS.md.
+          Open <strong>Job Contexts</strong> in the right rail to add DEV/QA/PROD parameters for this
+          pipeline.
         </p>
       )}
 
