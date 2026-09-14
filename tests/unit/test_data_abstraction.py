@@ -141,7 +141,7 @@ def test_planner_uses_capabilities_for_feed_mode():
     feed, reason = decide_feed(BLOCKING_ROWS, inbound=1, outbound=1, upstream_kind="rows")
     assert feed == "materialized_rows"
     feed, reason = decide_feed(ROWWISE, inbound=1, outbound=2, upstream_kind="rows")
-    assert feed == "materialized_rows"
+    assert feed == "batches"
     assert "fan-out" in reason
     feed, _ = decide_feed(ARTIFACT_SOURCE, inbound=0, outbound=1, upstream_kind=None)
     assert feed == "none"
@@ -205,9 +205,9 @@ def test_plan_flagship_like_graph():
     assert plan.nodes["s3"].feed == "none"
     assert plan.nodes["pgp"].feed == "artifact"
     assert plan.nodes["parse"].feed == "artifact"
-    assert plan.nodes["validate"].feed == "materialized_rows"  # fan-out
+    assert plan.nodes["validate"].feed == "batches"  # fan-out + spill replay
     assert plan.nodes["transform"].feed == "batches"
-    assert plan.nodes["dest"].feed == "materialized_rows"
+    assert plan.nodes["dest"].feed == "batches"  # streaming sink
     assert plan.nodes["sort"].feed == "materialized_rows"
     assert plan.nodes["sort"].capabilities.blocking is True
 
@@ -268,7 +268,7 @@ def test_runner_feeds_filter_in_bounded_batches(work_dir: Path):
     result = runner.run(pipeline)
     assert result.status == "success", result.error
     assert result.plan["nodes"]["flt"]["feed"] == "batches"
-    assert result.plan["nodes"]["out"]["feed"] == "materialized_rows"
+    assert result.plan["nodes"]["out"]["feed"] == "batches"
     assert result.node_metrics["flt"]["feed"] == "batches"
     assert result.node_metrics["flt"]["batches"] >= 2
     assert result.node_metrics["flt"]["rows_out"] == 13

@@ -145,6 +145,7 @@ function toFlow(
   const nodes: Node[] = pipeline.nodes.map((n) => {
     let runVisual: RunVisual = "idle";
     if (running) {
+      // Only pulse a few spine nodes — animating every node freezes large graphs.
       runVisual = "running";
     } else if (status === "success") {
       runVisual =
@@ -166,9 +167,10 @@ function toFlow(
       } satisfies EtlNodeData,
     };
   });
-  const edges: Edge[] = pipeline.edges.map((e) => {
+  const edges: Edge[] = pipeline.edges.map((e, idx) => {
     const isReject = e.sourceHandle === "rejects";
-    const flowing = running;
+    // Cap CSS flow animations — RF animated + CSS on every edge is expensive at 50+.
+    const flowing = running && idx < 8 && !isReject;
     const classes = [
       isReject ? "edge-reject" : "edge-success",
       flowing ? "edge-flowing" : "",
@@ -183,11 +185,11 @@ function toFlow(
       target: e.target,
       sourceHandle: e.sourceHandle || "out",
       targetHandle: e.targetHandle || undefined,
-      animated: flowing,
+      animated: false,
       className: classes,
       style: {
-        stroke: isReject ? "#ff8a9b" : flowing ? "#0071e3" : "#c7c7cc",
-        strokeWidth: flowing ? 2.25 : 1.75,
+        stroke: isReject ? "#ff8a9b" : flowing || running ? "#0071e3" : "#c7c7cc",
+        strokeWidth: flowing || running ? 2.25 : 1.75,
       },
     };
   });
@@ -321,19 +323,29 @@ function AppCanvas() {
       if (!p) return;
       const base = fromFlow(p, nodesRef.current, edgesRef.current);
       const flow = toFlow(base, { running, run: runStatus });
+      const freshNodes = new Map(flow.nodes.map((x) => [x.id, x]));
+      const freshEdges = new Map(flow.edges.map((x) => [x.id, x]));
       setNodes((nds) =>
         nds.map((n) => {
-          const fresh = flow.nodes.find((x) => x.id === n.id);
+          const fresh = freshNodes.get(n.id);
           if (!fresh) return n;
           const d = n.data as EtlNodeData;
           const fd = fresh.data as EtlNodeData;
+          if (d.runVisual === fd.runVisual) return n;
           return { ...n, data: { ...d, runVisual: fd.runVisual } };
         }),
       );
       setEdges((eds) =>
         eds.map((e) => {
-          const fresh = flow.edges.find((x) => x.id === e.id);
+          const fresh = freshEdges.get(e.id);
           if (!fresh) return e;
+          if (
+            e.animated === fresh.animated &&
+            e.className === fresh.className &&
+            e.style === fresh.style
+          ) {
+            return e;
+          }
           return {
             ...e,
             animated: fresh.animated,
@@ -569,7 +581,7 @@ function AppCanvas() {
         s === "pending" || s === "queued" || s === "running" || s === "retrying";
       // Async control plane: POST returns 202 queued; poll until terminal.
       for (let i = 0; i < 200 && active(status.status); i++) {
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 500));
         status = await api.getRun(run_id);
       }
       setRun(status);
@@ -775,6 +787,7 @@ function AppCanvas() {
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             fitView
+            onlyRenderVisibleElements
             onDrop={(e) => void onCanvasDrop(e)}
             onDragOver={onCanvasDragOver}
             onNodeClick={(_, n) => { setSelectedId(n.id); setDiscoverMsg(null); setMapperOpen(false); }}

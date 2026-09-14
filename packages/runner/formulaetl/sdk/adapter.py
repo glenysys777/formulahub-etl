@@ -3,6 +3,9 @@
 Existing components that still implement ``run(ctx, rows: list[dict])`` keep
 working. File nodes that expose a local path no longer receive whole-object
 ``bytes`` copies in ``config``.
+
+Phase Perf: ``run_batched`` spills large outputs to JSONL so hops do not
+concatenate full ``list[dict]`` working sets in RAM (Talend-style OOM avoidance).
 """
 
 from __future__ import annotations
@@ -13,6 +16,12 @@ from typing import Any
 from formulaetl.sdk.capabilities import ComponentCapabilities
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.data import ArtifactHandle, DatasetHandle, DEFAULT_BATCH_SIZE
+from formulaetl.sdk.spill import (
+    SPILL_THRESHOLD,
+    JsonlSpillWriter,
+    new_spill_path,
+    spill_enabled,
+)
 
 FeedMode = str  # "none" | "artifact" | "batches" | "materialized_rows"
 
@@ -52,6 +61,8 @@ def ensure_dataset(
 ) -> DatasetHandle:
     if result.dataset is not None:
         return result.dataset
+    if result.stream_datasets.get("out") is not None:
+        return result.stream_datasets["out"]
     return DatasetHandle.from_rows(result.rows, batch_size=batch_size)
 
 
@@ -123,11 +134,21 @@ def run_batched(
     dataset: DatasetHandle,
     batch_size: int,
 ) -> ComponentResult:
-    """Call ``run`` once per RowBatch and concatenate outputs (legacy-compatible).
+    """Call ``run`` once per RowBatch; spill outputs when large.
 
-    Input to each ``run`` is bounded. Output is still concatenated in this
-    process so a following blocking sink can ``materialize()``.
+    Input to each ``run`` is bounded. When ``FORMULAETL_STREAM_SPILL`` is on
+    (default), outputs go to JSONL under the run temp dir instead of a full
+    in-RAM concat — avoids Talend-style OOM on multi-hop wedges.
     """
+    use_spill = spill_enabled()
+    # Prefer consume_dataset when the component implements a true streaming sink.
+    consume = getattr(component, "consume_dataset", None)
+    if callable(consume):
+        cres = consume(ctx, dataset)
+        if "feed" not in cres.metrics.extras:
+            cres.metrics.extras["feed"] = "batches"
+        return cres
+
     out_rows: list[dict[str, Any]] = []
     out_rejects: list[dict[str, Any]] = []
     streams: dict[str, list[dict[str, Any]]] = {}
@@ -136,14 +157,36 @@ def run_batched(
     artifact: ArtifactHandle | None = None
     metrics = Metrics()
     n_batches = 0
+
+    spill_dir = ctx.temp_dir() / "spill"
+    out_writer: JsonlSpillWriter | None = None
+    rej_writer: JsonlSpillWriter | None = None
+    stream_writers: dict[str, JsonlSpillWriter] = {}
+
+    if use_spill:
+        out_writer = JsonlSpillWriter(new_spill_path(spill_dir, "out"))
+        rej_writer = JsonlSpillWriter(new_spill_path(spill_dir, "rej"))
+
     with timed(metrics):
         for batch in dataset.iter_batches(batch_size):
             n_batches += 1
             cres = component.run(ctx, list(batch.rows))
-            out_rows.extend(cres.rows)
-            out_rejects.extend(cres.rejects)
-            for key, rows in cres.streams.items():
-                streams.setdefault(key, []).extend(rows)
+            if use_spill and out_writer is not None and rej_writer is not None:
+                out_writer.write_rows(cres.rows)
+                rej_writer.write_rows(cres.rejects)
+                for key, srows in cres.streams.items():
+                    if key in ("out", "rejects"):
+                        continue
+                    if key not in stream_writers:
+                        stream_writers[key] = JsonlSpillWriter(
+                            new_spill_path(spill_dir, key)
+                        )
+                    stream_writers[key].write_rows(srows)
+            else:
+                out_rows.extend(cres.rows)
+                out_rejects.extend(cres.rejects)
+                for key, srows in cres.streams.items():
+                    streams.setdefault(key, []).extend(srows)
             side_effects.update(cres.side_effects or {})
             artifacts.update(cres.artifacts or {})
             if cres.artifact is not None:
@@ -151,12 +194,47 @@ def run_batched(
             metrics.rows_in += cres.metrics.rows_in
             metrics.rows_out += cres.metrics.rows_out
             metrics.rows_rejected += cres.metrics.rows_rejected
+
     metrics.extras["feed"] = "batches"
     metrics.extras["batches"] = n_batches
-    if not streams and out_rows:
-        streams = {"out": out_rows}
-    if out_rejects and "rejects" not in streams:
-        streams["rejects"] = out_rejects
+
+    stream_datasets: dict[str, DatasetHandle] = {}
+    dataset_out: DatasetHandle
+
+    if use_spill and out_writer is not None and rej_writer is not None:
+        metrics.extras["spill"] = True
+        dataset_out = out_writer.close(batch_size=batch_size)
+        rej_ds = rej_writer.close(batch_size=batch_size)
+        stream_datasets["out"] = dataset_out
+        if rej_writer.row_count:
+            stream_datasets["rejects"] = rej_ds
+        for key, writer in stream_writers.items():
+            stream_datasets[key] = writer.close(batch_size=batch_size)
+
+        # Small results: keep list adapter for unit tests / Studio previews.
+        if metrics.rows_out <= SPILL_THRESHOLD:
+            out_rows = dataset_out.materialize()
+            dataset_out = DatasetHandle.from_rows(out_rows, batch_size=batch_size)
+            stream_datasets["out"] = dataset_out
+        else:
+            out_rows = []
+
+        if metrics.rows_rejected <= SPILL_THRESHOLD and "rejects" in stream_datasets:
+            out_rejects = stream_datasets["rejects"].materialize()
+        elif metrics.rows_rejected > SPILL_THRESHOLD:
+            out_rejects = []
+
+        if out_rows:
+            streams = {"out": out_rows}
+        if out_rejects:
+            streams["rejects"] = out_rejects
+    else:
+        dataset_out = DatasetHandle.from_rows(out_rows, batch_size=batch_size)
+        if not streams and out_rows:
+            streams = {"out": out_rows}
+        if out_rejects and "rejects" not in streams:
+            streams["rejects"] = out_rejects
+
     return ComponentResult(
         rows=out_rows,
         rejects=out_rejects,
@@ -164,6 +242,7 @@ def run_batched(
         metrics=metrics,
         artifacts=artifacts,
         streams=streams,
-        dataset=DatasetHandle.from_rows(out_rows, batch_size=batch_size),
+        dataset=dataset_out,
         artifact=artifact,
+        stream_datasets=stream_datasets,
     )

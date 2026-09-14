@@ -144,7 +144,7 @@ def test_csv_10k_chunked(tmp_path: Path):
     assert batches[-1].eof is True
     assert max(len(b) for b in batches) <= 500
     assert rejects == []
-    # Rematerialize via fresh handle (iter_batches caches)
+    # Rematerialize via fresh handle (iter_batches does not auto-cache)
     assert len(ds.materialize()) == 10_000
 
 

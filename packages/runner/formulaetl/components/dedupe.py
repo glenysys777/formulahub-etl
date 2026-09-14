@@ -1,11 +1,15 @@
-"""Dedupe — keep unique rows by key columns."""
+"""Dedupe — keep unique rows by key columns.
+
+``keep=first`` is streaming/stateful across RowBatches (key set only in RAM).
+``keep=last`` remains blocking (needs the full input).
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
-from formulaetl.sdk.capabilities import BLOCKING_ROWS
+from formulaetl.sdk.capabilities import BLOCKING_ROWS, STREAMING_STATEFUL
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -67,6 +71,12 @@ class Dedupe(BaseComponent):
         },
     ]
 
+    def get_capabilities(self):
+        keep = (self.config.get("keep") or "first").lower()
+        if keep == "first":
+            return STREAMING_STATEFUL
+        return BLOCKING_ROWS
+
     def run(self, ctx: RunContext, rows: list[dict[str, Any]] | None = None) -> ComponentResult:
         metrics = Metrics()
         with timed(metrics):
@@ -82,7 +92,9 @@ class Dedupe(BaseComponent):
             dropped: list[dict[str, Any]] = []
 
             if keep == "first":
-                seen: set[tuple[Any, ...]] = set()
+                # Stateful across batched calls on the same component instance.
+                seen: set[tuple[Any, ...]] = getattr(self, "_seen", None) or set()
+                self._seen = seen
                 for row in rows:
                     key = tuple(row.get(k) for k in keys)
                     if key in seen:
