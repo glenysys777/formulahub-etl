@@ -181,12 +181,12 @@ export function NodeInspector({
   const tip =
     componentType === "lookup_join"
       ? focusJoin
-        ? "Join configuration — set type, match, and keys below. Wire primary → left/in and lookup → right (or set Lookup file)."
-        : "Merge two sources here: wire the primary stream to the left/in handle and the lookup stream to the right handle (or set Lookup file). Join keys below must match."
+        ? "Join configuration — set type, match, and keys below. Wire Main (upper handle) for the primary stream and Lookup (lower handle) for enrichment — or set Lookup file."
+        : "Lookup Join merges two streams: wire the primary row flow to Main and the enrichment flow to Lookup (or set Lookup file). Join keys below must match. Then map columns with Field Mapper."
       : componentType === "tmap"
-        ? "Field Mapper is column logic — Input columns, Variables (named expressions in the middle), and Output mappings. To merge two tables first, use Lookup Join."
+        ? "Field Mapper is column logic on the Main input — Input columns, Variables (named expressions), and Output mappings. To merge two tables first, use Lookup Join (Main + Lookup handles)."
         : componentType === "column_map"
-          ? "Schema Map renames columns. For Variables and expressions, use Field Mapper."
+          ? "Schema Map renames columns on the Main input. For Variables and expressions, use Field Mapper."
           : componentType === "databricks_sql"
             ? "Run SQL on a Databricks SQL Warehouse. Use ${run_date}, ${context.env}, ${upstream.field} — preview resolves against the active Job Context without executing live. DEMO writes a local sidecar; LIVE is UNPROVEN until credentials."
             : componentType === "databricks_job"

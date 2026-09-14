@@ -395,9 +395,9 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
       }}
       title={
         isMapper
-          ? "Double-click to open Field Mapper"
+          ? "Double-click to open Field Mapper — Main input on the left"
           : isLookup
-            ? "Double-click to edit join keys — primary → left/in, lookup → right"
+            ? "Double-click to edit join keys — Main (upper) + Lookup (lower)"
             : "Double-click to open Node Inspector"
       }
     >
@@ -425,16 +425,49 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
             type="target"
             id="in"
             position={Position.Left}
-            style={{ background: "#aeaeb2", top: "32%" }}
-            title="Primary (left) input"
+            className="etl-handle-main"
+            style={{ background: "#0071e3", top: "32%" }}
+            title="Main (primary) input — wire the driving row stream here"
           />
+          <span
+            className="etl-handle-label main"
+            style={{ top: "32%" }}
+            data-testid="handle-label-main"
+          >
+            Main
+          </span>
           <Handle
             type="target"
             id="right"
             position={Position.Left}
+            className="etl-handle-lookup"
             style={{ background: "#ff9f0a", top: "68%" }}
-            title="Lookup (right) input"
+            title="Lookup input — wire the enrichment stream (or use Lookup file)"
           />
+          <span
+            className="etl-handle-label lookup"
+            style={{ top: "68%" }}
+            data-testid="handle-label-lookup"
+          >
+            Lookup
+          </span>
+        </>
+      ) : isMapper ? (
+        <>
+          <Handle
+            type="target"
+            position={Position.Left}
+            className="etl-handle-main"
+            style={{ background: "#0071e3" }}
+            title="Main input — Field Mapper maps columns on this stream"
+          />
+          <span
+            className="etl-handle-label main"
+            style={{ top: "50%" }}
+            data-testid="handle-label-main"
+          >
+            Main
+          </span>
         </>
       ) : (
         <Handle type="target" position={Position.Left} style={{ background: "#aeaeb2" }} />
@@ -475,14 +508,14 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
             {maps ? `Map · ${maps}` : "Map"}
           </span>
           <span className="etl-map-hint" data-testid="etl-map-hint">
-            Double-click to map
+            Main → map
           </span>
         </div>
       ) : isLookup ? (
         <div className="etl-node-affordance">
           <span className="etl-join-badge">Join</span>
           <span className="etl-map-hint" data-testid="etl-join-hint">
-            Double-click for join keys
+            Main + Lookup
           </span>
         </div>
       ) : null}

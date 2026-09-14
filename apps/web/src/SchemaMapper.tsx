@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { api, type PipelineEdge, type PipelineNode, type SchemaDiscoverResult } from "./api";
+import { MAPPER_FUNCTION_GROUPS } from "./mapperFunctions";
 
 export type MappingRow = {
   id: string;
@@ -316,6 +317,7 @@ export function SchemaMapper({
   );
   const [paths, setPaths] = useState<LinkPath[]>([]);
   const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
+  const [fnHelpOpen, setFnHelpOpen] = useState(true);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const sourcePaneRef = useRef<HTMLDivElement>(null);
@@ -821,8 +823,8 @@ export function SchemaMapper({
             <h2>Field Mapper</h2>
             <p className="schema-mapper-sub">
               {isFieldMapper
-                ? "Input → Variables → Output · drag handles · Delete removes a link · Esc closes"
-                : "Map source columns to targets · drag handles · Delete removes a link · Esc closes"}
+                ? "Main input · Variables · Output — drag handles · helpers for string / math / null · Esc closes"
+                : "Map Main input columns to targets · drag handles · Delete removes a link · Esc closes"}
             </p>
           </div>
           <button type="button" className="btn" onClick={onClose}>
@@ -940,7 +942,7 @@ export function SchemaMapper({
 
           <div className="sm-pane sm-source-pane" ref={sourcePaneRef}>
             <div className="sm-pane-label sticky">
-              <span className="sm-pane-badge source">Input</span>
+              <span className="sm-pane-badge source">Input · Main</span>
               <span className="sm-pane-meta">{filteredSources.length} columns</span>
             </div>
             <div className="sm-search">
@@ -1028,12 +1030,61 @@ export function SchemaMapper({
                   aria-label="Filter variables"
                 />
               </div>
+              <div className="sm-fn-help" data-testid="mapper-fn-help">
+                <button
+                  type="button"
+                  className="sm-fn-help-toggle"
+                  onClick={() => setFnHelpOpen((v) => !v)}
+                  aria-expanded={fnHelpOpen}
+                >
+                  {fnHelpOpen ? "▾" : "▸"} Expression helpers
+                </button>
+                {fnHelpOpen && (
+                  <div className="sm-fn-groups">
+                    <p className="sm-fn-intro">
+                      Named Variables sit between Input and Output. Click a helper to seed the
+                      focused expression, or type freely — FormulaHub Field Mapper only.
+                    </p>
+                    {MAPPER_FUNCTION_GROUPS.map((g) => (
+                      <div key={g.id} className="sm-fn-group">
+                        <div className="sm-fn-group-label">{g.label}</div>
+                        <div className="sm-fn-chips">
+                          {g.items.map((item) => (
+                            <button
+                              key={item.sig}
+                              type="button"
+                              className="sm-fn-chip"
+                              title={item.tip}
+                              onClick={() => {
+                                setVariables((prev) => {
+                                  if (!prev.length) {
+                                    return [{ id: uid(), name: "var_1", expr: item.sig }];
+                                  }
+                                  const last = prev[prev.length - 1];
+                                  if (!last.expr.trim()) {
+                                    return prev.map((v) =>
+                                      v.id === last.id ? { ...v, expr: item.sig } : v,
+                                    );
+                                  }
+                                  return [...prev, { id: uid(), name: `var_${prev.length + 1}`, expr: item.sig }];
+                                });
+                              }}
+                            >
+                              <code>{item.sig}</code>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               {filteredVars.length === 0 ? (
                 <div className="sm-empty">
                   <div className="sm-empty-icon">◎</div>
                   <p>No variables yet</p>
                   <p className="sm-empty-hint">
-                    Named intermediate expressions — reference input columns, then use in Output.
+                    Named intermediate expressions — reference Input columns, then use in Output.
                   </p>
                   <button type="button" className="btn btn-primary btn-sm" onClick={addVariable}>
                     Add variable
