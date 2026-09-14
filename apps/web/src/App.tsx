@@ -260,11 +260,12 @@ function AppCanvas() {
   });
   /** Secondary rail panels — collapsed by default so Node Inspector stays visible. */
   const [railOpen, setRailOpen] = useState<{
+    pipeline: boolean;
     schedule: boolean;
     lastRun: boolean;
     logs: boolean;
     validate: boolean;
-  }>({ schedule: false, lastRun: false, logs: false, validate: false });
+  }>({ pipeline: false, schedule: false, lastRun: false, logs: false, validate: false });
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -1071,7 +1072,11 @@ function AppCanvas() {
               aria-expanded={fileMenuOpen}
               disabled={busy && !pipeline}
               title="Save, export, or copy git commands"
-              onClick={() => setFileMenuOpen((v) => !v)}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setFileMenuOpen((v) => !v);
+              }}
             >
               File ▾
             </button>
@@ -1289,22 +1294,10 @@ function AppCanvas() {
         </div>
 
         <aside
-          className={`sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}
+          className={`sidebar${sidebarCollapsed ? " is-collapsed" : ""}${selected ? " has-node-selection" : ""}`}
           data-testid="right-sidebar"
           aria-hidden={sidebarCollapsed}
         >
-          <div className="sidebar-section sidebar-pipeline">
-            <h3>Pipeline</h3>
-            {pipeline ? (
-              <>
-                <p className="pipeline-title">{pipeline.name}</p>
-                <p className="pipeline-desc">{pipeline.description || "No description"}</p>
-              </>
-            ) : (
-              <p className="empty-hint">Use the palette, New blank, Load demo, or AI Build.</p>
-            )}
-          </div>
-
           <div
             className={`sidebar-section inspector-section${selected ? " has-selection" : ""}`}
             data-testid="inspector-section"
@@ -1445,6 +1438,34 @@ function AppCanvas() {
               </>
             ) : (
               <p className="empty-hint">Select a node on the canvas.</p>
+            )}
+          </div>
+
+          <div
+            className={`sidebar-section sidebar-pipeline rail-accordion${railOpen.pipeline || !selected ? " is-open" : ""}${selected ? " is-secondary" : ""}`}
+            data-testid="pipeline-panel"
+          >
+            <button
+              type="button"
+              className="rail-accordion-toggle"
+              data-testid="rail-pipeline-toggle"
+              aria-expanded={railOpen.pipeline || !selected}
+              onClick={() => setRailOpen((r) => ({ ...r, pipeline: !r.pipeline }))}
+            >
+              <h3>Pipeline</h3>
+              <span className="rail-accordion-chevron" aria-hidden>
+                {railOpen.pipeline || !selected ? "▾" : "▸"}
+              </span>
+            </button>
+            {(railOpen.pipeline || !selected) && (
+              pipeline ? (
+                <>
+                  <p className="pipeline-title">{pipeline.name}</p>
+                  <p className="pipeline-desc">{pipeline.description || "No description"}</p>
+                </>
+              ) : (
+                <p className="empty-hint">Use the palette, New blank, Load demo, or AI Build.</p>
+              )
             )}
           </div>
 

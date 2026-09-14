@@ -648,6 +648,22 @@ select {
   flex: 0 0 auto;
 }
 
+.sidebar.has-node-selection .inspector-section {
+  order: -1;
+}
+
+.sidebar-pipeline.is-secondary .pipeline-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.file-menu .btn {
+  position: relative;
+  z-index: 2;
+}
+
 .pipeline-title {
   font-size: 0.98rem;
   font-weight: 600;
