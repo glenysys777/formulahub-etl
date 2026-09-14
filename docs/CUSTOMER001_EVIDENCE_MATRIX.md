@@ -1,6 +1,6 @@
 # CUSTOMER_001 — Production evidence matrix (PROVE+SELL)
 
-**Audited tip:** `2b1ae36` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; matrix tip `#23`)  
+**Audited tip:** `c9c66e1` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; SQL Soft-PASS `9f8fc2b` / #24; Jobs Soft-PASS this PR)  
 **Mission:** Honest production-evidence for design-partner sell. **Never claim LIVE proven from `FORMULAETL_DEMO=1`.**  
 **Sources:** code under `packages/runner`, `packages/api`, demos, `tests/`, and prior audits (`PRODUCTION_READINESS.md`, `PRODUCTION_EVIDENCE.md`, `CURRENT_STATE_MATRIX.md`). Sales copy is **not** evidence.
 
@@ -31,8 +31,8 @@ Paste redacted JSON + SHA + date into `PRODUCTION_EVIDENCE.md` §C before flippi
 | C4 | Live Postgres load | **FAIL / UNPROVEN** | Same |
 | C5 | Live Snowflake load | **FAIL / UNPROVEN** | Same + live path is `INSERT…executemany` (not COPY) |
 | C6 | Full live wedge E2E | **FAIL / UNPROVEN** | Harness exists (`scripts/live_wedge_e2e.py`); never run with real systems here |
-| — | Live Databricks Jobs | **FAIL / UNPROVEN** | Sidecar ≠ workspace Jobs API |
-| — | Live Databricks SQL | **Soft-PASS / YES** (Free Edition SQL smoke 2026-09-14) | Statement Execution API `SELECT 1` only — see [`evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json); **not** Jobs |
+| — | Live Databricks Jobs | **Soft-PASS / YES** (Free Edition Jobs API via FormulaETL 2026-09-14) | Jobs `run-now` + poll only — see [`evidence/databricks_job_smoke_redacted.json`](./evidence/databricks_job_smoke_redacted.json); **not** Spark-inside-FormulaETL / full wedge |
+| — | Live Databricks SQL | **Soft-PASS / YES** (Free Edition SQL smoke 2026-09-14) | Statement Execution API `SELECT 1` only — see [`evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json); **not** full wedge SQL |
 | — | Live Kafka broker consume | **FAIL / UNPROVEN** | Fixture jsonl ≠ broker |
 
 Harness: `docs/design-partner/LIVE_WEDGE.md`. CI: `pytest -m "not live and not bench"` + `FORMULAETL_DEMO=1` only.
@@ -56,8 +56,8 @@ Harness: `docs/design-partner/LIVE_WEDGE.md`. CI: `pytest -m "not live and not b
 | **Dedupe** | ALPHA | **YES** | **YES** (`keep=first` streams; `keep=last` materializes) | N/A | **Partial** | Key-set RSS dominates at 10M LOCAL/DEMO |
 | **Postgres source/dest** | DEMO CI / ALPHA live (`psycopg`) | **YES** (SQLite/CSV fallback) | **YES** (DEMO) | **NO** | **No** until LIVE DSN proof | SQL-as-config; live untested in CI |
 | **Snowflake destination** | DEMO (CSV + `.load.json`) / weak live (`executemany`) | **YES** (sidecar) | **YES** (streaming demo sink to 1M+) | **NO** | **No** as “warehouse product” | **Do not sell high-volume Snowflake** until staging+COPY proven — see `docs/snowflake/BULK_LOAD.md` |
-| **Databricks Job** | DEMO sidecar / ALPHA Jobs API client | **YES** (Jobs-shaped JSON) | **YES** (DEMO tests) | **NO** | **No** until workspace Jobs run | Orchestration only — **not Spark**; FormulaETL does not run the cluster; LIVE Jobs **UNPROVEN** |
-| **Databricks SQL** | DEMO sidecar / ALPHA Statement Execution API | **YES** (resolved SQL sidecar) | **YES** (DEMO + Contexts) | **YES** (Free Edition SQL smoke 2026-09-14) | **Partial** — SQL smoke only (`SELECT 1`); not full wedge SQL | Soft-PASS LIVE_EXTERNAL Statement API; evidence [`evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json); PAT never in repo; Jobs still UNPROVEN |
+| **Databricks Job** | DEMO sidecar / ALPHA Jobs API client | **YES** (Jobs-shaped JSON) | **YES** (DEMO tests) | **YES** (Free Edition Jobs API via FormulaETL 2026-09-14) | **Partial** — Jobs trigger/poll smoke only; **not** Spark-inside-FormulaETL | Soft-PASS LIVE_EXTERNAL Jobs API; evidence [`evidence/databricks_job_smoke_redacted.json`](./evidence/databricks_job_smoke_redacted.json); PAT never in repo; orchestration only |
+| **Databricks SQL** | DEMO sidecar / ALPHA Statement Execution API | **YES** (resolved SQL sidecar) | **YES** (DEMO + Contexts) | **YES** (Free Edition SQL smoke 2026-09-14) | **Partial** — SQL smoke only (`SELECT 1`); not full wedge SQL | Soft-PASS LIVE_EXTERNAL Statement API; evidence [`evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json); PAT never in repo |
 | **Archive** | ALPHA | **YES** | **YES** | N/A (local FS) | **Yes** for local/partner FS | Not object-store lifecycle / S3 Glacier |
 | **Schedule (cron)** | DEMO / ALPHA bookkeeping | **YES** (UI + enqueue) | **YES** (unit) | N/A | **Partial** — single-process only | In-process poll; no HA / misfire / distributed lock |
 | **Retries** | ALPHA on S3/SFTP I/O (`retry_call`); job-level retry **ABSENT** | **YES** (code paths under DEMO where exercised) | **Partial** | **NO** live retry proof | **Partial** | Status constant `retrying` exists; worker does not auto-retry failed runs |
@@ -96,7 +96,7 @@ Studio + API + sequential PipelineRunner  →   Jobs API run-now / SQL Warehouse
 DEMO sidecars prove graph shape only      →   Distributed Spark / SQL compute
 ```
 
-LIVE Databricks **SQL** Soft-PASS: Free Edition Statement Execution API `SELECT 1` with `FORMULAETL_DEMO=0` (2026-09-14) — [`evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json). LIVE Databricks **Jobs** remain **UNPROVEN**.
+LIVE Databricks Soft-PASS (Free Edition, `FORMULAETL_DEMO=0`, 2026-09-14): **SQL** Statement Execution API `SELECT 1` — [`evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json); **Jobs** API `run-now` + poll via FormulaETL — [`evidence/databricks_job_smoke_redacted.json`](./evidence/databricks_job_smoke_redacted.json). Neither is a full LIVE wedge; Spark stays in Databricks.
 
 ## Cross-links
 
@@ -138,6 +138,6 @@ export LOCAL_POSTGRES_DSN="host=localhost port=5432 dbname=formulahub_wedge"
 python3 scripts/customer001_local_wedge.py --mode postgres
 ```
 
-**Do not** use L* rows to mark C1–C6 or LIVE Databricks Jobs / Kafka as proven. (Databricks SQL Soft-PASS is separate founder evidence, not L*.)
+**Do not** use L* rows to mark C1–C6 or LIVE Kafka as proven. (Databricks SQL/Jobs Soft-PASS is separate founder evidence, not L*.)
 
 Docs: [`CUSTOMER001_LOCAL_WEDGE.md`](./CUSTOMER001_LOCAL_WEDGE.md) · Harness: `scripts/customer001_local_wedge.py`

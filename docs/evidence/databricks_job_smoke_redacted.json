@@ -1,0 +1,14 @@
+{
+  "component": "formulaetl.components.databricks_job.DatabricksJob.run",
+  "host": "https://dbc-25bc9366-e85a.cloud.databricks.com",
+  "job_id": "283082916987867",
+  "job_name": "formulahub-etl-smoke",
+  "notebook_path": "/Shared/formulahub_etl_smoke",
+  "run_id": "1060529287069664",
+  "life_cycle_state": "TERMINATED",
+  "result_state": "SUCCESS",
+  "duration_s_approx": 21,
+  "demo": false,
+  "FORMULAETL_DEMO": 0,
+  "note": "Free Edition Jobs API run-now + poll via FormulaETL; PAT not stored in repo"
+}
