@@ -124,7 +124,10 @@ class SchemaValidate(BaseComponent):
                             errors.append(f"column '{col}' invalid for type '{typ}'")
                 if strict:
                     known = set(columns.keys())
-                    extra = set(row.keys()) - known
+                    # Ignore internal meta fields (e.g. _row_number, _reject_reason)
+                    extra = {
+                        k for k in row.keys() if not str(k).startswith("_")
+                    } - known
                     if extra:
                         errors.append(f"unexpected columns: {sorted(extra)}")
 

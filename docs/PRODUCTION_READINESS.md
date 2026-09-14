@@ -80,10 +80,10 @@ Default tests and `make demo*` set `FORMULAETL_DEMO=1`. Live branches exist in s
 
 | Connector | Demo path (what CI actually runs) | Live path in code | Proven live? |
 |-----------|-----------------------------------|-------------------|--------------|
-| **S3** | Read `data/s3/<bucket>/<key>` bytes | `boto3` `get_object` entire body into RAM | **No** |
-| **SFTP** | Copy `fixtures/sample/*` via `shutil` | `paramiko` get/put; RSA key file | **No** |
-| **PGP** | Real `pgpy` on demo keys / encrypted fixture | Same library; passphrase in config | Crypto is real; **ops/secrets not production** |
-| **CSV** | `csv.DictReader` on full string in RAM | Same | Small-file only |
+| **S3** | Read `data/s3/<bucket>/<key>`; optional paginated demo list | `boto3` `download_file` to temp + retries/timeouts; paginated `list_objects_v2` | **No** |
+| **SFTP** | Copy `fixtures/sample/*` via `shutil` | `paramiko` stream `get`; timeouts/retries; **RejectPolicy** host keys by default; password and/or key | **No** |
+| **PGP** | Real `pgpy` on demo keys / encrypted fixture; path/temp artifact | Same; `private_key_ref` / `passphrase_ref`; large outputs path-only | Crypto is real; **ops/secrets not production** |
+| **CSV** | Chunked `iter_csv_batches` / DictReader; malformed policy | Same | **ALPHA** for laptop-sized jobs; adapter still materializes rows for sinks |
 | **Snowflake** | Write CSV + `.load.json` under `data/out/snowflake` | Optional `snowflake-connector-python` `INSERT … executemany` (not COPY). Falls back to demo if `account` missing | **No** |
 | **Postgres** | SQLite / CSV fixture / inline 3 rows | `psycopg` when `FORMULAETL_DEMO=0` + real host/DSN | **No** |
 | **MySQL** | Same demo fallbacks | `pymysql` extra (not a default install extra) | **No** |
@@ -141,14 +141,14 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | HTTP API (FastAPI) | DEMO | DESIGN PARTNER | No | Hosted UI without API | CORS `*`; no auth | Authn first |
 | Visual designer (Vite) | ALPHA | PRODUCTION UI | No (runtime not behind it) | UI can be static | Vercel ≠ ETL runtime | Keep UI; document API requirement |
 | Community cron scheduler | DEMO | DESIGN PARTNER (single node) | No | Yes | In-process poll; no HA | External cron or queue; not K8s operator yet |
-| Local file / Excel / CSV parse | ALPHA | PRODUCTION (size limits) | No | Fixtures | Full file in RAM | Chunked CSV; max bytes |
+| Local file / Excel / CSV parse | ALPHA (CSV chunked + policy) | PRODUCTION (size limits) | No | Fixtures | Excel/JSON still whole-file; CSV adapter materializes | Keep chunking; spill later |
 | Schema validate / transform / filter / sort / aggregate / dedupe | ALPHA | PRODUCTION | No | Sample data | In-memory algorithms | Same data-plane limits |
 | Field Mapper (variables + exprs) | ALPHA | DESIGN PARTNER | No | Demo pipelines | AST subset; silent nulls | Typed errors; tests on customer schemas |
 | Lookup Join | ALPHA | DESIGN PARTNER | No | File lookup demo | Nested-loop RAM | Spill / size guard |
 | Python Row sandbox | DEMO | DESIGN PARTNER | No | Yes | `exec` + regex denylist ≠ sandbox | Don’t run untrusted code in prod |
-| S3 source | DEMO | PRODUCTION | No | Default yes | Live get_object untested; full object RAM | Design-partner live GET + IAM; chunk |
-| SFTP source/dest | DEMO | DESIGN PARTNER | No | Default yes | Live paramiko untested; password in JSON | Partner SFTP with env secrets |
-| PGP encrypt/decrypt | ALPHA (library) / DEMO (keys) | PRODUCTION | No | Demo keys in git | Private key path in pipeline JSON | External KMS/agent; no keys in repo |
+| S3 source | DEMO CI / ALPHA code (stream + paginated list) | PRODUCTION | No | Default yes | Live path untested in CI | Design-partner live GET + IAM |
+| SFTP source/dest | DEMO CI / ALPHA code (timeouts, host-key reject) | DESIGN PARTNER | No | Default yes | Live paramiko untested; password in JSON | Partner SFTP with env secrets |
+| PGP encrypt/decrypt | ALPHA (library + path/temp/refs) / DEMO (keys) | PRODUCTION | No | Demo keys in git | Private key path still common in demos | External KMS/agent; prefer refs |
 | Snowflake destination | DEMO | PRODUCTION | No | Yes unless live extra + account | CSV sidecar ≠ warehouse; live INSERT weak | Partner COPY INTO evidence |
 | Postgres source/dest | DEMO | DESIGN PARTNER | No | Default yes | Live psycopg untested; SQL as config | Partner DSN via env; parameterized DDL |
 | MySQL source/dest | DEMO | ALPHA | No | Yes | pymysql optional; same demo fallbacks | Do not expand; freeze |
