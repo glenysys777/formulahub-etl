@@ -33,6 +33,7 @@ FormulaHub ETL is a drag-and-drop pipeline designer. Underneath, it generates an
 
 ```
 apps/web          React + Vite + React Flow (visual DAG)
+apps/desktop      Electron Studio shell (local API + WebView)
 packages/api      FastAPI — CRUD, run, logs, AI builder, schema discover, scheduler
 packages/runner   Python component SDK + sequential DAG runner
 demos/            Ready-to-run pipeline demos (incl. Kafka → Databricks)
@@ -92,6 +93,32 @@ Or with Docker:
 make docker-up    # API :18765  ·  UI :18766
 ```
 
+### Desktop Studio (Mac / local)
+
+Prefer a **desktop window** over Docker+browser. Browser is optional (Studio menu → Open in Browser).
+
+```bash
+make install && make seed && make build
+make desktop      # Electron → API + Studio window (no Terminal to keep open)
+```
+
+**Build on Mac → FormulaHub Studio.app** (macOS; Linux CI does not emit a signed `.dmg`):
+
+```bash
+cd apps/desktop && npm install && npm run dist:mac
+open release/mac*/FormulaHub\ Studio.app
+```
+
+Double-click starts API + Studio behind the scenes; quit stops children. Survives better than Terminal `.command` launchers. Details: [docs/studio/DESKTOP_SHELL.md](./docs/studio/DESKTOP_SHELL.md).
+
+**Mac handoff zip** (unzip → double-click **FormulaHub Studio.app**):
+
+```bash
+make mac-pack
+# → data/out/mac-pack/FormulaHub-ETL-Mac.zip
+#    FormulaHub Studio.app  ·  README_MAC.md  ·  START-NATIVE.command (fallback)
+```
+
 ### Hosted UI vs API
 
 The production UI at [formulahub-etl.vercel.app](https://formulahub-etl.vercel.app) is the static Vite app (`apps/web`). It does **not** run FastAPI or the Python runner on Vercel. Point a browser at the live UI for the canvas; run pipelines with `make api` / `make docker-up` (`FORMULAETL_DEMO=1`). See [docs/deploy.md](./docs/deploy.md) for Vercel project details and API hosting next steps (Railway / Fly / Render / Docker). Optional later: `CNAME etl.formulahub.io` → Vercel.
@@ -147,9 +174,11 @@ formulahub-etl/
     api/             # FastAPI formulaetl_api
   apps/
     web/             # Vite React app
+    desktop/         # Electron Studio shell
   demos/
   fixtures/
   docs/sales/        # GTM one-pager, pitch, use cases
+  docs/studio/       # Finished product + desktop shell
   tests/
 ```
 

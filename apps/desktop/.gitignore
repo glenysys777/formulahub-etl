@@ -1,0 +1,6 @@
+# Electron / electron-builder outputs
+node_modules/
+release/
+dist/
+*.log
+.DS_Store

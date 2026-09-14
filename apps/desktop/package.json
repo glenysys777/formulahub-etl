@@ -1,0 +1,62 @@
+{
+  "name": "formulahub-studio-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FormulaHub ETL Studio desktop shell — local API + WebView",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "lint": "node scripts/lint.js",
+    "build:check": "node scripts/lint.js && node -c src/main.js && node -c src/api-manager.js && node -c src/paths.js",
+    "smoke:api": "node scripts/smoke-api.js",
+    "pack:mac": "electron-builder --mac dir dmg --publish never",
+    "pack:mac:unsigned": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir dmg --publish never",
+    "dist:mac": "npm run pack:mac:unsigned"
+  },
+  "build": {
+    "appId": "io.formulahub.etl.studio",
+    "productName": "FormulaHub Studio",
+    "copyright": "Copyright © LYNKX LLC / Formula Hub Pvt Ltd",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "studio-web",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "target": [
+        "dir",
+        "dmg"
+      ],
+      "artifactName": "FormulaHub-Studio-${version}-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "title": "FormulaHub Studio"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "electron": "^35.2.1",
+    "electron-builder": "^26.0.12"
+  }
+}

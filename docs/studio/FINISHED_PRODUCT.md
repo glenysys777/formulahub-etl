@@ -30,6 +30,7 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 | Scheduler | In-process cron per pipeline | DEMO / ALPHA |
 | Studio chrome | Collapsible inspector, type-to-place, status `work_dir`, Save / Export | ALPHA |
 | Project files | Mirror JSON under `{work_dir}/pipelines/`; export JSON/zip | ALPHA |
+| Desktop shell | Electron: spawn/reuse API + Studio window; Mac `.app` via `dist:mac` / mac-pack | ALPHA |
 
 ## Studio UX (this wave)
 
@@ -41,9 +42,10 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 - Field Mapper Variables: expression helper chips (string / math / null; date honest DEMO limits)
 - Status bar: `workspace on this machine · {work_dir}`
 - Projects + Git → see `PROJECTS_AND_GIT.md`
+- Desktop: double-click **FormulaHub Studio.app** → API + Studio window (browser is optional menu item)
 
 ## Explicitly not in this wave
 
 - No new connector types
 - No GitHub OAuth / one-click remote (Pro later)
-- Desktop `.app` shell → see `DESKTOP_SHELL.md` (next wave)
+- Desktop shell is shipped — see `DESKTOP_SHELL.md` (signed/notarized Mac builds still need Apple secrets)
