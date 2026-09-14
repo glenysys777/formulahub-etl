@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    name: pytest (DEMO=1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: |
+          python3 -m pip install -U pip
+          python3 -m pip install -e packages/runner -e packages/api
+          python3 -m pip install pytest pytest-asyncio httpx openpyxl pandas 'paramiko>=3.0' 'psycopg[binary]>=3.1' 'cryptography>=42.0'
+
+      - name: Seed demo fixtures
+        run: python3 scripts/seed_demo.py
+        env:
+          FORMULAETL_DEMO: "1"
+
+      - name: Pytest
+        run: python3 -m pytest tests -q --tb=short
+        env:
+          FORMULAETL_DEMO: "1"
+          # conftest also forces DEMO=1; no live cloud credentials in CI
+
+  web-build:
+    name: npm build (optional web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install and build web
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run build
+
+# Live connector E2E (AWS/SFTP/Snowflake/Kafka/Databricks/Postgres) is intentionally
+# NOT run here. Design partners prove live paths manually — see
+# docs/design-partner/PRODUCTION_CHECKLIST.md

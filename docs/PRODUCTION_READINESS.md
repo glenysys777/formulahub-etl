@@ -20,7 +20,7 @@
 
 **Rule:** Demo fixtures, local CSV sidecars, and Jobs-API-shaped JSON files are **DEMO**. They are not production Snowflake, Kafka, S3, or Databricks.
 
-**Overall product today: DEMO** (designer + fixture connectors). Control-plane bookkeeping (async runs, SQLite history, versions) is **ALPHA**. Connections + local SecretProvider + optional API key are **ALPHA** (Community / design-partner path — not enterprise vault). A few transforms and local file I/O are **ALPHA** for laptop-sized jobs. Nothing is **PRODUCTION**.
+**Overall product today: DEMO** (designer + fixture connectors). Control-plane bookkeeping (async runs, SQLite history, versions, **pipeline validate**) is **ALPHA**. Connections + local SecretProvider + optional API key are **ALPHA** (Community / design-partner path — not enterprise vault). CI gate (pytest + DEMO=1, optional web build) is **ALPHA**. A few transforms and local file I/O are **ALPHA** for laptop-sized jobs. Nothing is **PRODUCTION**. Live connectors remain **DEMO** until design-partner proofs (manual — not CI).
 
 ---
 
@@ -125,8 +125,9 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 
 - Tests: `make test` → `python3 -m pytest tests` with `FORMULAETL_DEMO=1` (see `tests/conftest.py`).
 - Web: `cd apps/web && npm run build`.
-- **No `.github/workflows`.** There is no GitHub Actions gate on `main`.
-- This audit run (2026-09-14): **pytest 87 passed**; **`npm run build` succeeded**. Details: `docs/PRODUCTION_EVIDENCE.md`.
+- **GitHub Actions:** `.github/workflows/ci.yml` — pytest (DEMO=1) + optional npm build. **No live cloud E2E.**
+- Design-partner ops: `docs/design-partner/` (deploy, security, connections link, backup, troubleshooting, checklist).
+- Details: `docs/PRODUCTION_EVIDENCE.md`.
 
 ---
 
@@ -139,8 +140,10 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | Pipeline JSON on disk | ALPHA | PRODUCTION (versioned, validated) | No | Demos yes | No migrations, no RBAC | Keep JSON; add schema + secret stripping |
 | Run store | ALPHA (SQLite) | PRODUCTION | No | Demos yes | Local file DB; no Postgres yet | Optional Postgres later |
 | API run locking | ALPHA (async queue; no global lock) | DESIGN PARTNER | No | Yes | Embedded worker default | Split worker + auth |
-| Observability / lineage | ALPHA (durable events + node_runs) | PRODUCTION | No | Logs in SQLite | No retention policy | Structured export |
-| HTTP API (FastAPI) | DEMO | DESIGN PARTNER | No | Hosted UI without API | CORS `*`; no auth | Authn first |
+| Observability / lineage | ALPHA (durable events + node_runs + run summary) | PRODUCTION | No | Logs in SQLite | No retention policy | Structured export |
+| HTTP API (FastAPI) | ALPHA (optional API key + validate) | DESIGN PARTNER | No | Hosted UI without API | CORS `*`; open when unset | Keep key on for partners |
+| Pipeline validate preflight | ALPHA | DESIGN PARTNER | No | Structural only | Not live connectivity | Partner connection test |
+| CI/CD gate | ALPHA (GHA pytest + npm build, DEMO=1) | PRODUCTION | No | No live cloud in CI | Live E2E still manual | Keep honesty; partner checklist |
 | Visual designer (Vite) | ALPHA | PRODUCTION UI | No (runtime not behind it) | UI can be static | Vercel ≠ ETL runtime | Keep UI; document API requirement |
 | Community cron scheduler | DEMO | DESIGN PARTNER (single node) | No | Yes | In-process poll; no HA | External cron or queue; not K8s operator yet |
 | Local file / Excel / CSV parse | ALPHA (CSV chunked + policy) | PRODUCTION (size limits) | No | Fixtures | Excel/JSON still whole-file; CSV adapter materializes | Keep chunking; spill later |
@@ -163,7 +166,6 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | Auth / SSO / RBAC | ALPHA (optional API key) / ABSENT SSO | ENTERPRISE / PRODUCTION | No | Open when unset | Set key before live data | Token auth before any customer data |
 | Multi-instance HA | DEMO (absent) | ENTERPRISE | No | Single process | Duplicate scheduled runs | Control plane vs workers (see architecture note) |
 | Hosted production runtime | DEMO | PRODUCTION | No | Vercel UI only | README “K8s” is roadmap, not code | Docker API with DEMO=0 only after auth |
-| CI/CD gate | DEMO (no GHA) | PRODUCTION | No | Local pytest | `main` can break unnoticed | Add pytest + `npm run build` on PR |
 | Billing / marketplace / Talend importer / Spark / K8s operator | Absent (correct) | — | — | — | Feature expansion vs trust | **Do not build** (mission freeze) |
 
 ---
@@ -171,11 +173,11 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 ## Bottlenecks for Customer #1 (honest remaining)
 
 1. **Memory data path** — `list[dict]` + whole-file hops still bound laptop-sized jobs.
-2. **Live connectors unproven in CI** — S3/SFTP/Snowflake/Kafka/Databricks/Postgres live paths need partner evidence.
+2. **Live connectors unproven in CI** — S3/SFTP/Snowflake/Kafka/Databricks/Postgres live paths need partner evidence (manual checklist).
 3. **API key is optional** — Community defaults open; partners must set `FORMULAETL_API_KEY`.
 4. **Local secret store ≠ enterprise vault** — migrate nodes to `connection_id`; see `docs/CONNECTIONS.md`.
 5. **In-process cron** — not a scheduler product.
-6. **No CI on GitHub** — production trust starts with a gate that matches `make test` + `npm run build`.
+6. **CI proves DEMO pytest only** — green Actions ≠ live cloud; see `docs/design-partner/PRODUCTION_CHECKLIST.md`.
 7. **Control plane vs data plane** — queue exists; prefer private worker next to customer data (`docs/architecture/CONTROL_DATA_PLANE.md`).
 
 ---
