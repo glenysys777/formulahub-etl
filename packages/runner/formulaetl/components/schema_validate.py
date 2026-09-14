@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import ROWWISE
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -69,6 +70,7 @@ class SchemaValidate(BaseComponent):
     component_type = "schema_validate"
     display_name = "Schema Validate"
     category = "quality"
+    capabilities = ROWWISE
     config_schema = {
         "type": "object",
         "required": ["columns"],

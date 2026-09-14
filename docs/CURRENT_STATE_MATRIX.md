@@ -1,12 +1,12 @@
 # Current state matrix (code inspection)
 
-Companion to `docs/PRODUCTION_READINESS.md`. Same audit SHA: `b162987c3667525fcffa75135bbab54e391855f5` (2026-09-14).
+Companion to `docs/PRODUCTION_READINESS.md`. Phase A audit SHA: `b162987` / merged `cecb1af`. Phase B (this PR) updates the data-path row only.
 
 Status: **DEMO** | **ALPHA** | **ABSENT**. Risk: **blocker** | **high** | **medium** | **low**.
 
 | FEATURE | STATUS | RISK | NEXT ACTION |
 |---------|--------|------|-------------|
-| In-process DAG, `list[dict]` + full `bytes` | DEMO | blocker | Phase B: bounded data plane (not Spark in this freeze) |
+| In-process DAG; `DatasetHandle` / `ArtifactHandle`; legacy `list[dict]` adapter | ALPHA (types + planner) / DEMO (still one process; dest materializes) | blocker | Phase C: more file components off RAM; not Spark |
 | Auth on API | ABSENT | blocker | Token/SSO before any live credentials |
 | Secrets vault / env refs | ABSENT | blocker | Stop storing passwords in pipeline JSON |
 | Durable run history | ABSENT (memory) | blocker | Persist `RunStore` |

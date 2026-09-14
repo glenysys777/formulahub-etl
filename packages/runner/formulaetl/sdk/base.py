@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
+from formulaetl.sdk.capabilities import LEGACY, ComponentCapabilities
 from formulaetl.sdk.context import RunContext, ComponentResult
 from formulaetl.sdk.params import resolve_parameters
 
@@ -14,7 +15,11 @@ class BaseComponent(ABC):
 
     Subclasses declare ``component_type``, optional ``config_schema``
     (JSON-schema-like dict for docs/compat), ``parameters`` (UI param-first
-    schema), and implement ``run``.
+    schema), ``capabilities`` (planner feed mode), and implement ``run``.
+
+    Default capabilities are legacy: blocking ``list[dict]`` materialization.
+    The runner still calls ``run(ctx, rows)``; DatasetHandle is adapted at
+    the engine boundary.
     """
 
     component_type: ClassVar[str] = "base"
@@ -23,6 +28,7 @@ class BaseComponent(ABC):
     config_schema: ClassVar[dict[str, Any]] = {}
     # Param-first UI schema: [{label, key, type, required, default, help, options?}]
     parameters: ClassVar[list[dict[str, Any]]] = []
+    capabilities: ClassVar[ComponentCapabilities] = LEGACY
 
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
@@ -31,6 +37,10 @@ class BaseComponent(ABC):
     def get_parameters(cls) -> list[dict[str, Any]]:
         """Return normalized UI parameter definitions."""
         return resolve_parameters(cls.parameters, cls.config_schema)
+
+    def get_capabilities(self) -> ComponentCapabilities:
+        """Instance capabilities (planner). Override when config changes the mode."""
+        return self.capabilities
 
     def validate_config(self) -> None:
         """Raise ValueError if required config keys are missing."""

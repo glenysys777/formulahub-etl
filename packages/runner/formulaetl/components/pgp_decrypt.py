@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import ARTIFACT_BLOCKING
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
+from formulaetl.sdk.data import write_bytes_artifact
 from formulaetl.sdk.registry import register
 
 
@@ -15,6 +17,7 @@ class PGPDecrypt(BaseComponent):
     component_type = "pgp_decrypt"
     display_name = "PGP Decrypt"
     category = "security"
+    capabilities = ARTIFACT_BLOCKING
     config_schema = {
         "type": "object",
         "required": ["private_key_path"],
@@ -47,19 +50,25 @@ class PGPDecrypt(BaseComponent):
             key, _ = pgpy.PGPKey.from_blob(key_path.read_text())
             passphrase = self.config.get("passphrase") or ""
 
-            # Resolve ciphertext
+            # Resolve ciphertext — prefer a file handle over in-memory bytes.
             raw: bytes | None = None
-            if self.config.get("input_path"):
-                ip = ctx.resolve(self.config["input_path"])
-                raw = ip.read_bytes()
-            elif "bytes" in self.config:
+            input_path = self.config.get("input_path") or self.config.get("path")
+            if input_path:
+                ip = ctx.resolve(input_path)
+                if ip.exists() and ip != key_path:
+                    raw = ip.read_bytes()
+            if raw is None and "bytes" in self.config:
                 b = self.config["bytes"]
                 raw = b if isinstance(b, bytes) else b.encode("utf-8")
-            elif ctx.variables.get("upstream_bytes"):
-                raw = ctx.variables["upstream_bytes"]
-            elif ctx.variables.get("upstream_path"):
-                raw = Path(ctx.variables["upstream_path"]).read_bytes()
-            else:
+            if raw is None:
+                art = ctx.variables.get("upstream_artifact")
+                if isinstance(art, dict) and art.get("path") and Path(art["path"]).exists():
+                    raw = Path(art["path"]).read_bytes()
+                elif ctx.variables.get("upstream_path"):
+                    raw = Path(ctx.variables["upstream_path"]).read_bytes()
+                elif ctx.variables.get("upstream_bytes"):
+                    raw = ctx.variables["upstream_bytes"]
+            if raw is None:
                 raise ValueError("PGPDecrypt: no encrypted input (path/bytes/upstream)")
 
             metrics.rows_in = 1
@@ -83,24 +92,29 @@ class PGPDecrypt(BaseComponent):
                 out_bytes = bytes(plaintext)
                 content = out_bytes.decode("utf-8", errors="replace")
 
-            out_path = None
+            out_path: Path | None = None
+            temp = True
             if self.config.get("output_path"):
                 out_path = ctx.resolve(self.config["output_path"])
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_bytes(out_bytes)
+                temp = False
+            else:
+                out_path = ctx.temp_dir() / "pgp_decrypt.out"
+            handle = write_bytes_artifact(out_path, out_bytes, temp=temp)
 
-            ctx.emit(f"PGPDecrypt: decrypted {len(raw)} → {len(out_bytes)} bytes")
+            ctx.emit(
+                f"PGPDecrypt: decrypted {len(raw)} → {len(out_bytes)} bytes → {out_path}"
+            )
             metrics.rows_out = 1
 
             artifacts: dict[str, Any] = {
-                "bytes": out_bytes,
+                "path": str(out_path),
                 "content": content,
+                "artifact": handle.to_dict(),
             }
-            if out_path:
-                artifacts["path"] = str(out_path)
 
         return ComponentResult(
             rows=[{"_decrypted_size": len(out_bytes)}],
             metrics=metrics,
             artifacts=artifacts,
+            artifact=handle,
         )

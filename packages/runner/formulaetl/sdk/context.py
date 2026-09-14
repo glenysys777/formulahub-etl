@@ -5,7 +5,10 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from formulaetl.sdk.data import ArtifactHandle, DatasetHandle
 
 
 @dataclass
@@ -35,6 +38,10 @@ class ComponentResult:
     artifacts: dict[str, Any] = field(default_factory=dict)
     # Optional parallel output streams keyed by port name
     streams: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    # Phase B handles (optional). Legacy components leave these None;
+    # the runner wraps ``rows`` / ``artifacts["path"]`` via the adapter.
+    dataset: DatasetHandle | None = None
+    artifact: ArtifactHandle | None = None
 
 
 LogFn = Callable[[str], None]
@@ -51,7 +58,14 @@ class RunContext:
     data_dir: Path = field(default_factory=lambda: Path("./data"))
     variables: dict[str, Any] = field(default_factory=dict)
     log: LogFn = field(default=lambda msg: print(msg))
+    batch_size: int = 1024
     _node_metrics: dict[str, Metrics] = field(default_factory=dict)
+
+    def temp_dir(self) -> Path:
+        """Per-run scratch directory for ArtifactHandle temp files."""
+        path = self.data_dir / "tmp" / self.run_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def resolve(self, path: str | Path) -> Path:
         p = Path(path)

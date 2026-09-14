@@ -164,7 +164,7 @@ def health() -> dict[str, Any]:
         "scheduler": os.environ.get("FORMULAETL_SCHEDULER", "1") != "0",
         # Honesty labels for operators (not a capability claim)
         "run_store": "memory",
-        "data_path": "in_process_list_dict_and_bytes",
+        "data_path": "in_process_batches_and_artifact_handles",
         "auth": "none",
         "readiness_level": "DEMO",
     }

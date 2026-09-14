@@ -1,8 +1,9 @@
 """DAG pipeline runner.
 
-Honesty (not a production data plane): nodes run sequentially in one process.
-The working set is ``list[dict]`` rows plus optional whole-object ``bytes``
-artifacts (S3/SFTP/PGP). There is no chunked I/O, spill, or worker isolation.
+Honesty (not a production data plane): nodes still run sequentially in one
+process. Phase B adds DatasetHandle / ArtifactHandle and a planner that feeds
+row-wise nodes bounded ``RowBatch``es and file hops via on-disk handles.
+Legacy ``run(ctx, list[dict])`` components keep working through the adapter.
 Default ``FORMULAETL_DEMO=1`` is fixture/mock mode.
 """
 
@@ -15,8 +16,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from formulaetl.engine.planner import ExecutionPlan, NodePlan, plan_pipeline
 from formulaetl.models.pipeline import PipelineDefinition
-from formulaetl.sdk.context import ComponentResult, Metrics, RunContext
+from formulaetl.sdk.adapter import (
+    apply_upstream_to_component,
+    artifact_from_result,
+    run_batched,
+    run_legacy,
+)
+from formulaetl.sdk.context import ComponentResult, RunContext
+from formulaetl.sdk.data import ArtifactHandle, DatasetHandle, DEFAULT_BATCH_SIZE
 from formulaetl.sdk.registry import create_component
 
 
@@ -31,6 +40,7 @@ class RunResult:
     error: str | None = None
     outputs: dict[str, Any] = field(default_factory=dict)
     duration_ms: float = 0.0
+    plan: dict[str, Any] = field(default_factory=dict)
 
 
 class PipelineRunner:
@@ -40,11 +50,19 @@ class PipelineRunner:
         self,
         work_dir: str | Path | None = None,
         demo_mode: bool | None = None,
+        batch_size: int | None = None,
     ):
         self.work_dir = Path(work_dir or os.getcwd()).resolve()
         if demo_mode is None:
             demo_mode = os.environ.get("FORMULAETL_DEMO", "1") == "1"
         self.demo_mode = demo_mode
+        if batch_size is None:
+            raw = os.environ.get("FORMULAETL_BATCH_SIZE") or str(DEFAULT_BATCH_SIZE)
+            try:
+                batch_size = int(raw)
+            except ValueError:
+                batch_size = DEFAULT_BATCH_SIZE
+        self.batch_size = max(1, int(batch_size))
 
     def run(self, pipeline: PipelineDefinition, run_id: str | None = None) -> RunResult:
         run_id = run_id or str(uuid.uuid4())
@@ -61,6 +79,7 @@ class PipelineRunner:
             work_dir=self.work_dir,
             data_dir=self.work_dir / "data",
             log=_log,
+            batch_size=self.batch_size,
         )
 
         result = RunResult(
@@ -70,85 +89,63 @@ class PipelineRunner:
             logs=logs,
         )
         t0 = time.perf_counter()
-        _log(f"Starting pipeline '{pipeline.name}' (demo={self.demo_mode})")
+        _log(
+            f"Starting pipeline '{pipeline.name}' "
+            f"(demo={self.demo_mode}, batch_size={self.batch_size})"
+        )
+
+        exec_plan: ExecutionPlan | None = None
+        node_outputs: dict[str, ComponentResult] = {}
+        temp_handles: list[ArtifactHandle] = []
 
         try:
             order = pipeline.topological_order()
             node_map = pipeline.node_map()
 
-            # Collect inbound edges per target for multi-input support
             inbound: dict[str, list] = {n.id: [] for n in pipeline.nodes}
             for e in pipeline.edges:
                 inbound[e.target].append(e)
 
-            node_outputs: dict[str, ComponentResult] = {}
+            exec_plan = plan_pipeline(pipeline, batch_size=self.batch_size)
+            result.plan = exec_plan.to_dict()
             total_in = total_out = total_rej = 0
 
             for nid in order:
                 node = node_map[nid]
-                _log(f"→ Running node '{node.label or nid}' ({node.type})")
+                nplan = exec_plan.nodes[nid]
+                _log(
+                    f"→ Running node '{node.label or nid}' ({node.type}) "
+                    f"feed={nplan.feed} ({nplan.reason})"
+                )
                 component = create_component(node.type, node.config)
                 component.validate_config()
 
-                # Gather input rows from upstream (prefer main stream)
-                input_rows: list[dict[str, Any]] | None = None
-                upstream_artifacts: dict[str, Any] = {}
-                edges_in = inbound[nid]
-                if edges_in:
-                    input_rows = []
-                    input_streams: dict[str, list[dict[str, Any]]] = {}
-                    for e in edges_in:
-                        up = node_outputs[e.source]
-                        handle = e.sourceHandle or "out"
-                        if handle == "rejects" and up.rejects:
-                            chunk = list(up.rejects)
-                        elif handle in up.streams:
-                            chunk = list(up.streams[handle])
-                        else:
-                            chunk = list(up.rows)
-                        target_port = e.targetHandle or "in"
-                        input_streams.setdefault(target_port, []).extend(chunk)
-                        input_rows.extend(chunk)
-                        upstream_artifacts.update(up.artifacts)
-                    # Expose named ports for multi-input transforms (e.g. lookup_join)
-                    if any(p != "in" for p in input_streams) or len(input_streams) > 1:
-                        ctx.variables["_input_streams"] = input_streams
-                        # Prefer left/main/in as the primary row list
-                        for pref in ("left", "main", "in"):
-                            if pref in input_streams:
-                                input_rows = list(input_streams[pref])
-                                break
-                    else:
-                        ctx.variables.pop("_input_streams", None)
+                dataset, input_rows, upstream_artifacts, upstream_handle = _gather_inputs(
+                    nid, inbound, node_outputs, ctx, self.batch_size
+                )
 
-                # Merge upstream artifacts into config for file-path chaining
-                if upstream_artifacts:
-                    ctx.variables.update({f"upstream_{k}": v for k, v in upstream_artifacts.items()})
-                    # Preserve the first on-disk source path for ArchiveFiles
-                    if "path" in upstream_artifacts and "original_source_path" not in ctx.variables:
-                        if node.type in ("s3_source", "local_file_source"):
-                            pass  # set after run below
-                    cfg = dict(component.config)
-                    if "path" not in cfg and "path" in upstream_artifacts:
-                        cfg["path"] = upstream_artifacts["path"]
-                    if "content" not in cfg and "content" in upstream_artifacts:
-                        cfg["content"] = upstream_artifacts["content"]
-                    if "bytes" not in cfg and "bytes" in upstream_artifacts:
-                        cfg["bytes"] = upstream_artifacts["bytes"]
-                    component.config = cfg
+                apply_upstream_to_component(
+                    component,
+                    ctx,
+                    artifacts=upstream_artifacts,
+                    handle=upstream_handle,
+                    next_caps=nplan.capabilities,
+                )
 
-                cres = component.run(ctx, input_rows)
+                cres = _invoke(component, ctx, nplan, dataset, input_rows)
+                if cres.dataset is None and cres.rows is not None:
+                    cres.dataset = DatasetHandle.from_rows(cres.rows, self.batch_size)
+                if cres.artifact is None:
+                    cres.artifact = artifact_from_result(cres)
+                if "feed" not in cres.metrics.extras:
+                    cres.metrics.extras["feed"] = nplan.feed
+
                 node_outputs[nid] = cres
                 ctx.record_metrics(nid, cres.metrics)
+                if cres.artifact and cres.artifact.temp:
+                    temp_handles.append(cres.artifact)
 
-                # Remember original source path (S3/local file) for archive step
-                if node.type in ("s3_source", "local_file_source", "sftp_source") and cres.artifacts.get("path"):
-                    ctx.variables["original_source_path"] = cres.artifacts["path"]
-                    ctx.variables["upstream_path"] = cres.artifacts["path"]
-                    ctx.variables["upstream_bytes"] = cres.artifacts.get("bytes")
-                elif cres.artifacts:
-                    for k, v in cres.artifacts.items():
-                        ctx.variables[f"upstream_{k}"] = v
+                _remember_source_path(ctx, node.type, cres)
 
                 total_in += cres.metrics.rows_in
                 total_out += cres.metrics.rows_out
@@ -156,28 +153,19 @@ class PipelineRunner:
                 _log(
                     f"  ✓ {node.type}: in={cres.metrics.rows_in} "
                     f"out={cres.metrics.rows_out} rejected={cres.metrics.rows_rejected} "
-                    f"({cres.metrics.duration_ms:.1f}ms)"
+                    f"feed={nplan.feed} ({cres.metrics.duration_ms:.1f}ms)"
                 )
 
-            # Aggregate from last sink-ish nodes
             result.status = "success"
             result.metrics = {
                 "rows_in": total_in,
                 "rows_out": total_out,
                 "rows_rejected": total_rej,
+                "batch_size": self.batch_size,
             }
             result.node_metrics = ctx.all_metrics()
             result.outputs = {
-                nid: {
-                    "rows": len(o.rows),
-                    "rejects": len(o.rejects),
-                    "side_effects": o.side_effects,
-                    "artifacts": {
-                        k: (str(v) if isinstance(v, (Path, bytes)) else v)
-                        for k, v in o.artifacts.items()
-                        if k != "bytes" and k != "content"
-                    },
-                }
+                nid: _summarize_output(o)
                 for nid, o in node_outputs.items()
             }
             _log("Pipeline completed successfully")
@@ -187,7 +175,152 @@ class PipelineRunner:
             result.error = str(exc)
             _log(f"Pipeline FAILED: {exc}")
 
+        finally:
+            _cleanup_temps(temp_handles, _log)
+
         result.duration_ms = (time.perf_counter() - t0) * 1000
         result.metrics["duration_ms"] = round(result.duration_ms, 2)
         result.logs = logs
+        if exec_plan is not None and "plan" not in result.metrics:
+            result.metrics["planner_nodes"] = len(exec_plan.nodes)
         return result
+
+
+def _gather_inputs(
+    nid: str,
+    inbound: dict[str, list],
+    node_outputs: dict[str, ComponentResult],
+    ctx: RunContext,
+    batch_size: int,
+) -> tuple[DatasetHandle | None, list[dict[str, Any]] | None, dict[str, Any], ArtifactHandle | None]:
+    edges_in = inbound[nid]
+    if not edges_in:
+        ctx.variables.pop("_input_streams", None)
+        return None, None, {}, None
+
+    input_rows: list[dict[str, Any]] = []
+    input_streams: dict[str, list[dict[str, Any]]] = {}
+    upstream_artifacts: dict[str, Any] = {}
+    upstream_handle: ArtifactHandle | None = None
+    passthrough_dataset: DatasetHandle | None = None
+
+    for e in edges_in:
+        up = node_outputs[e.source]
+        handle = e.sourceHandle or "out"
+        if handle == "rejects" and up.rejects:
+            chunk = list(up.rejects)
+            chunk_ds = DatasetHandle.from_rows(chunk, batch_size)
+        elif handle in up.streams:
+            chunk = list(up.streams[handle])
+            chunk_ds = DatasetHandle.from_rows(chunk, batch_size)
+        else:
+            chunk = list(up.rows)
+            chunk_ds = up.dataset if up.dataset is not None else DatasetHandle.from_rows(chunk, batch_size)
+        target_port = e.targetHandle or "in"
+        input_streams.setdefault(target_port, []).extend(chunk)
+        input_rows.extend(chunk)
+        upstream_artifacts.update(up.artifacts)
+        if up.artifact is not None:
+            upstream_handle = up.artifact
+        if len(edges_in) == 1 and handle not in ("rejects",) and handle not in up.streams:
+            passthrough_dataset = chunk_ds
+
+    if any(p != "in" for p in input_streams) or len(input_streams) > 1:
+        ctx.variables["_input_streams"] = input_streams
+        for pref in ("left", "main", "in"):
+            if pref in input_streams:
+                input_rows = list(input_streams[pref])
+                passthrough_dataset = DatasetHandle.from_rows(input_rows, batch_size)
+                break
+    else:
+        ctx.variables.pop("_input_streams", None)
+
+    if passthrough_dataset is None:
+        passthrough_dataset = DatasetHandle.from_rows(input_rows, batch_size)
+    return passthrough_dataset, input_rows, upstream_artifacts, upstream_handle
+
+
+def _invoke(
+    component: Any,
+    ctx: RunContext,
+    nplan: NodePlan,
+    dataset: DatasetHandle | None,
+    input_rows: list[dict[str, Any]] | None,
+) -> ComponentResult:
+    feed = nplan.feed
+    if feed == "none":
+        return component.run(ctx, None)
+    if feed == "artifact":
+        # File hop: path/handle is in config. Pass through rows if present
+        # (archive echoes them) but parsers should prefer the artifact path.
+        return component.run(ctx, input_rows)
+    if feed == "batches":
+        if dataset is None:
+            dataset = DatasetHandle.from_rows(input_rows, nplan.batch_size)
+        return run_batched(component, ctx, dataset, nplan.batch_size)
+    # materialized_rows — legacy adapter
+    if dataset is None:
+        return component.run(ctx, input_rows)
+    cres = run_legacy(component, ctx, dataset)
+    if "feed" not in cres.metrics.extras:
+        cres.metrics.extras["feed"] = "materialized_rows"
+    return cres
+
+
+def _remember_source_path(ctx: RunContext, node_type: str, cres: ComponentResult) -> None:
+    path = None
+    if cres.artifact is not None and cres.artifact.path:
+        path = cres.artifact.path
+    elif cres.artifacts.get("path"):
+        path = str(cres.artifacts["path"])
+
+    if node_type in ("s3_source", "local_file_source", "sftp_source") and path:
+        ctx.variables["original_source_path"] = path
+        ctx.variables["upstream_path"] = path
+        if cres.artifact is not None:
+            ctx.variables["upstream_artifact"] = cres.artifact.to_dict()
+        ctx.variables.pop("upstream_bytes", None)
+        return
+
+    if cres.artifact is not None:
+        ctx.variables["upstream_artifact"] = cres.artifact.to_dict()
+        if cres.artifact.path:
+            ctx.variables["upstream_path"] = cres.artifact.path
+        ctx.variables.pop("upstream_bytes", None)
+        ctx.variables.pop("upstream_content", None)
+        return
+
+    if cres.artifacts:
+        for k, v in cres.artifacts.items():
+            if k in ("bytes", "content"):
+                continue
+            ctx.variables[f"upstream_{k}"] = v
+
+
+def _summarize_output(o: ComponentResult) -> dict[str, Any]:
+    n_rows = o.metrics.rows_out if o.metrics.rows_out else len(o.rows)
+    artifact_meta = None
+    if o.artifact is not None:
+        artifact_meta = o.artifact.to_dict()
+    return {
+        "rows": n_rows,
+        "rejects": len(o.rejects),
+        "side_effects": o.side_effects,
+        "artifacts": {
+            k: (str(v) if isinstance(v, (Path, bytes)) else v)
+            for k, v in o.artifacts.items()
+            if k not in ("bytes", "content")
+        },
+        "artifact": artifact_meta,
+        "feed": o.metrics.extras.get("feed"),
+    }
+
+
+def _cleanup_temps(handles: list[ArtifactHandle], log) -> None:
+    for handle in handles:
+        if not handle.temp or not handle.path:
+            continue
+        try:
+            Path(handle.path).unlink(missing_ok=True)
+        except OSError as exc:
+            log(f"temp cleanup skipped {handle.path}: {exc}")

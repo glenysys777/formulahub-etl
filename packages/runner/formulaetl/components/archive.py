@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import ARTIFACT_BLOCKING
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -16,6 +17,7 @@ class ArchiveFiles(BaseComponent):
     component_type = "archive_files"
     display_name = "Archive Files"
     category = "utility"
+    capabilities = ARTIFACT_BLOCKING
     config_schema = {
         "type": "object",
         "required": ["destination"],
