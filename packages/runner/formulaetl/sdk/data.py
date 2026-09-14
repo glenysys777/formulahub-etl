@@ -2,19 +2,26 @@
 
 Phase B: bounded batches and on-disk artifact handles. Not a Spark/K8s
 runtime. ``list[dict]`` remains the adapter for legacy components.
+
+Phase C: CSV streaming with malformed-row policy, row numbers, Unicode.
 """
 
 from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 DEFAULT_BATCH_SIZE = int(os.environ.get("FORMULAETL_BATCH_SIZE", "1024") or "1024")
+
+MalformedPolicy = Literal["fail", "skip", "reject"]
+ExtraColumnsPolicy = Literal["keep", "drop", "reject"]
+MissingColumnsPolicy = Literal["fill", "reject"]
 
 _CONTENT_TYPES: dict[str, str] = {
     ".csv": "text/csv",
@@ -185,21 +192,93 @@ class DatasetHandle:
         delimiter: str = ",",
         encoding: str = "utf-8",
         batch_size: int = DEFAULT_BATCH_SIZE,
+        quotechar: str = '"',
+        has_header: bool = True,
+        fieldnames: list[str] | None = None,
+        null_values: tuple[str, ...] = ("", "NULL", "null", "None"),
+        empty_as_null: bool = False,
+        malformed_policy: MalformedPolicy = "reject",
+        extra_columns: ExtraColumnsPolicy = "keep",
+        missing_columns: MissingColumnsPolicy = "fill",
+        add_row_numbers: bool = False,
+        row_number_field: str = "_row_number",
+        rejects_out: list[dict[str, Any]] | None = None,
     ) -> DatasetHandle:
+        """Stream a CSV file as ``RowBatch``es without loading the whole file first.
+
+        Malformed rows (wrong field counts that csv cannot recover, encoding
+        issues already surface as UnicodeDecodeError) follow ``malformed_policy``.
+        Extra/missing columns relative to the header follow ``extra_columns`` /
+        ``missing_columns``. Rejects are appended to ``rejects_out`` when provided.
+        """
         file_path = Path(path)
+        opts = CsvReadOptions(
+            delimiter=delimiter,
+            encoding=encoding,
+            quotechar=quotechar,
+            has_header=has_header,
+            fieldnames=fieldnames,
+            null_values=null_values,
+            empty_as_null=empty_as_null,
+            malformed_policy=malformed_policy,
+            extra_columns=extra_columns,
+            missing_columns=missing_columns,
+            add_row_numbers=add_row_numbers,
+            row_number_field=row_number_field,
+        )
 
         def producer(bs: int) -> Iterator[RowBatch]:
-            with file_path.open(newline="", encoding=encoding) as fh:
-                reader = csv.DictReader(fh, delimiter=delimiter)
-                buf: list[dict[str, Any]] = []
-                idx = 0
-                for rec in reader:
-                    buf.append(dict(rec))
-                    if len(buf) >= bs:
-                        yield RowBatch(rows=buf, batch_index=idx, eof=False)
-                        idx += 1
-                        buf = []
-                yield RowBatch(rows=buf, batch_index=idx, eof=True)
+            yield from iter_csv_batches(
+                file_path,
+                batch_size=bs,
+                options=opts,
+                rejects_out=rejects_out,
+            )
+
+        return cls(producer=producer, batch_size=batch_size)
+
+    @classmethod
+    def from_csv_text(
+        cls,
+        content: str,
+        *,
+        delimiter: str = ",",
+        encoding: str = "utf-8",
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        quotechar: str = '"',
+        has_header: bool = True,
+        fieldnames: list[str] | None = None,
+        null_values: tuple[str, ...] = ("", "NULL", "null", "None"),
+        empty_as_null: bool = False,
+        malformed_policy: MalformedPolicy = "reject",
+        extra_columns: ExtraColumnsPolicy = "keep",
+        missing_columns: MissingColumnsPolicy = "fill",
+        add_row_numbers: bool = False,
+        row_number_field: str = "_row_number",
+        rejects_out: list[dict[str, Any]] | None = None,
+    ) -> DatasetHandle:
+        opts = CsvReadOptions(
+            delimiter=delimiter,
+            encoding=encoding,
+            quotechar=quotechar,
+            has_header=has_header,
+            fieldnames=fieldnames,
+            null_values=null_values,
+            empty_as_null=empty_as_null,
+            malformed_policy=malformed_policy,
+            extra_columns=extra_columns,
+            missing_columns=missing_columns,
+            add_row_numbers=add_row_numbers,
+            row_number_field=row_number_field,
+        )
+
+        def producer(bs: int) -> Iterator[RowBatch]:
+            yield from iter_csv_batches(
+                io.StringIO(content),
+                batch_size=bs,
+                options=opts,
+                rejects_out=rejects_out,
+            )
 
         return cls(producer=producer, batch_size=batch_size)
 
@@ -249,3 +328,168 @@ def _chunk_rows(rows: list[dict[str, Any]], batch_size: int) -> Iterator[RowBatc
         eof = start + batch_size >= n
         yield RowBatch(rows=chunk, batch_index=idx, eof=eof)
         idx += 1
+
+
+@dataclass
+class CsvReadOptions:
+    delimiter: str = ","
+    encoding: str = "utf-8"
+    quotechar: str = '"'
+    has_header: bool = True
+    fieldnames: list[str] | None = None
+    null_values: tuple[str, ...] = ("", "NULL", "null", "None")
+    empty_as_null: bool = False
+    malformed_policy: MalformedPolicy = "reject"
+    extra_columns: ExtraColumnsPolicy = "keep"
+    missing_columns: MissingColumnsPolicy = "fill"
+    add_row_numbers: bool = False
+    row_number_field: str = "_row_number"
+
+
+_RESTKEY = "__csv_extra__"
+_MISSING = "__csv_missing__"
+
+
+def _normalize_cell(value: Any, opts: CsvReadOptions) -> Any:
+    if value is None or value is _MISSING:
+        return None
+    if not isinstance(value, str):
+        return value
+    if opts.empty_as_null and value in opts.null_values:
+        return None
+    if value in opts.null_values and value != "":
+        return None
+    return value
+
+
+def _open_csv_source(source: str | Path | io.StringIO, encoding: str):
+    if isinstance(source, io.StringIO):
+        source.seek(0)
+        return source, False
+    path = Path(source)
+    return path.open(newline="", encoding=encoding), True
+
+
+def iter_csv_batches(
+    source: str | Path | io.StringIO,
+    *,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    options: CsvReadOptions | None = None,
+    rejects_out: list[dict[str, Any]] | None = None,
+) -> Iterator[RowBatch]:
+    """Yield bounded ``RowBatch``es from a CSV path or in-memory text buffer."""
+    opts = options or CsvReadOptions()
+    bs = max(1, int(batch_size))
+    fh, close = _open_csv_source(source, opts.encoding)
+    try:
+        # DictReader handles quoted commas / multiline quotes. restval=_MISSING
+        # distinguishes physically absent columns from empty strings.
+        if opts.has_header:
+            reader = csv.DictReader(
+                fh,
+                delimiter=opts.delimiter,
+                quotechar=opts.quotechar,
+                restkey=_RESTKEY,
+                restval=_MISSING,
+            )
+            headers = list(reader.fieldnames or [])
+        else:
+            headers = list(opts.fieldnames or [])
+            if not headers:
+                raise ValueError("CSV: has_header=false requires fieldnames")
+            reader = csv.DictReader(
+                fh,
+                fieldnames=headers,
+                delimiter=opts.delimiter,
+                quotechar=opts.quotechar,
+                restkey=_RESTKEY,
+                restval=_MISSING,
+            )
+
+        buf: list[dict[str, Any]] = []
+        batch_idx = 0
+        data_row = 0
+
+        for raw in reader:
+            data_row += 1
+            try:
+                row, reject_reason = _normalize_csv_row(raw, headers, opts, data_row)
+            except csv.Error as exc:
+                reject_reason = f"csv parse error: {exc}"
+                row = None
+            except UnicodeError as exc:
+                if opts.malformed_policy == "fail":
+                    raise
+                reject_reason = f"unicode error: {exc}"
+                row = None
+
+            if reject_reason:
+                bad = {
+                    k: (None if v is _MISSING else v)
+                    for k, v in (raw.items() if isinstance(raw, dict) else [])
+                    if k != _RESTKEY
+                }
+                if opts.add_row_numbers:
+                    bad[opts.row_number_field] = data_row
+                bad["_reject_reason"] = reject_reason
+                if opts.malformed_policy == "fail":
+                    raise ValueError(
+                        f"CSV malformed at row {data_row}: {reject_reason}"
+                    )
+                if opts.malformed_policy == "reject" and rejects_out is not None:
+                    rejects_out.append(bad)
+                continue
+
+            assert row is not None
+            buf.append(row)
+            if len(buf) >= bs:
+                yield RowBatch(rows=buf, batch_index=batch_idx, eof=False)
+                batch_idx += 1
+                buf = []
+
+        yield RowBatch(rows=buf, batch_index=batch_idx, eof=True)
+    finally:
+        if close:
+            fh.close()
+
+
+def _normalize_csv_row(
+    raw: dict[str, Any],
+    headers: list[str],
+    opts: CsvReadOptions,
+    data_row: int,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return (row, reject_reason). Exactly one of them is non-None on reject."""
+    extra_vals = raw.pop(_RESTKEY, None)
+    raw.pop(None, None)
+
+    if extra_vals is not None:
+        reason = f"extra columns beyond header ({len(extra_vals)} value(s))"
+        if opts.malformed_policy == "fail":
+            raise ValueError(f"CSV malformed at row {data_row}: {reason}")
+        if opts.extra_columns == "reject":
+            return None, reason
+        if opts.extra_columns == "keep":
+            for i, val in enumerate(extra_vals):
+                raw[f"_extra_{i}"] = _normalize_cell(val, opts)
+
+    missing = [h for h in headers if h and raw.get(h) is _MISSING]
+    if missing and opts.missing_columns == "reject":
+        return None, f"missing columns: {missing}"
+
+    out: dict[str, Any] = {}
+    for h in headers:
+        if not h:
+            continue
+        if h not in raw or raw[h] is _MISSING:
+            out[h] = None
+        else:
+            out[h] = _normalize_cell(raw[h], opts)
+
+    for k, v in raw.items():
+        if k not in out and k != _RESTKEY:
+            out[k] = _normalize_cell(v, opts)
+
+    if opts.add_row_numbers:
+        out[opts.row_number_field] = data_row
+    return out, None
