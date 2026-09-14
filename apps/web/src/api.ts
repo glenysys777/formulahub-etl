@@ -28,7 +28,19 @@ export type Pipeline = {
 export type RunStatus = {
   run_id: string;
   pipeline_id: string;
-  status: "pending" | "running" | "success" | "failed" | string;
+  status:
+    | "pending"
+    | "queued"
+    | "running"
+    | "success"
+    | "failed"
+    | "cancelled"
+    | "retrying"
+    | "timed_out"
+    | string;
+  pipeline_version_id?: string;
+  node_runs?: Array<Record<string, unknown>>;
+  events?: Array<Record<string, unknown>>;
   metrics: Record<string, number>;
   node_metrics: Record<string, Record<string, number>>;
   logs: string[];

@@ -563,7 +563,10 @@ function AppCanvas() {
       // Brief flowing animation, then poll until terminal (demo runs sync but stay resilient)
       await new Promise((r) => setTimeout(r, 450));
       let status = await api.getRun(run_id);
-      for (let i = 0; i < 40 && (status.status === "pending" || status.status === "running"); i++) {
+      const active = (s: string) =>
+        s === "pending" || s === "queued" || s === "running" || s === "retrying";
+      // Async control plane: POST returns 202 queued; poll until terminal.
+      for (let i = 0; i < 200 && active(status.status); i++) {
         await new Promise((r) => setTimeout(r, 150));
         status = await api.getRun(run_id);
       }

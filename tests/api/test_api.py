@@ -2,40 +2,29 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.api_helpers import boot_api, wait_run
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
-def client(work_dir: Path, monkeypatch):
-    # Re-seed encrypted file into ROOT data for API runs (API uses FORMULAETL_WORK_DIR=ROOT)
-    # work_dir is isolated; API uses ROOT — restore S3 object if previous integration moved it
-    from scripts.seed_demo import main
-
-    main()
-    monkeypatch.setenv("FORMULAETL_WORK_DIR", str(ROOT))
-    monkeypatch.setenv("FORMULAETL_DEMO", "1")
-    monkeypatch.setenv("FORMULAETL_SCHEDULER", "0")
-
-    # Import after env set
-    import importlib
-    import formulaetl_api
-
-    importlib.reload(formulaetl_api)
-    # Patch module-level WORK_DIR
-    formulaetl_api.WORK_DIR = ROOT
-    formulaetl_api.DEMO_MODE = True
-    formulaetl_api._scheduler = None
-
+def client(work_dir: Path, monkeypatch, tmp_path: Path):
+    formulaetl_api = boot_api(
+        monkeypatch,
+        work_dir=ROOT,
+        db_path=tmp_path / "api.db",
+        embedded_worker=True,
+        scheduler=False,
+    )
     with TestClient(formulaetl_api.app) as c:
         yield c
+    from scripts.seed_demo import main
 
-    # Re-seed so other tests have the encrypted object
     main()
 
 
@@ -45,6 +34,7 @@ def test_health(client: TestClient):
     body = r.json()
     assert body["status"] == "ok"
     assert body["demo_mode"] is True
+    assert body["run_store"] == "sqlite"
 
 
 def test_list_components(client: TestClient):
@@ -116,29 +106,29 @@ def test_ai_build_offline(client: TestClient):
     assert "snowflake_destination" in types
     assert "archive_files" in types
     assert body["edges"]
-    # Graph is a valid DAG
     from formulaetl.models.pipeline import PipelineDefinition
 
     PipelineDefinition.model_validate(body).topological_order()
 
 
 def test_create_and_run_demo(client: TestClient):
-    # Demo should be auto-loaded
     r = client.get("/api/pipelines/demo-s3-pgp-snowflake")
     assert r.status_code == 200
 
     run = client.post("/api/pipelines/demo-s3-pgp-snowflake/run")
-    assert run.status_code == 200
-    run_id = run.json()["run_id"]
-    assert run.json()["status"] in ("success", "running", "failed")
+    assert run.status_code == 202
+    body = run.json()
+    run_id = body["run_id"]
+    assert body["status"] == "queued"
+    assert body.get("pipeline_version_id")
 
-    status = client.get(f"/api/runs/{run_id}")
-    assert status.status_code == 200
-    body = status.json()
-    assert body["status"] == "success", body.get("error")
-    assert body["metrics"]["rows_rejected"] >= 3
-    assert body["node_metrics"]["validate"]["rows_out"] == 10
-    assert body["node_metrics"]["validate"]["rows_rejected"] == 3
+    status = wait_run(client, run_id)
+    assert status["status"] == "success", status.get("error")
+    assert status["metrics"]["rows_rejected"] >= 3
+    assert status["node_metrics"]["validate"]["rows_out"] == 10
+    assert status["node_metrics"]["validate"]["rows_rejected"] == 3
+    assert status["node_runs"]
+    assert status["events"]
 
 
 def test_create_pipeline_crud(client: TestClient):
@@ -166,6 +156,7 @@ def test_create_pipeline_crud(client: TestClient):
     created = client.post("/api/pipelines", json=payload)
     assert created.status_code == 201
     pid = created.json()["id"]
+    assert created.json().get("pipeline_version_id")
 
     got = client.get(f"/api/pipelines/{pid}")
     assert got.status_code == 200
@@ -197,7 +188,6 @@ def test_ai_build_api_flow(client: TestClient):
     PipelineDefinition.model_validate(body).topological_order()
 
 
-
 def test_ai_build_excel_flow(client: TestClient):
     prompt = (
         "Read orders from an Excel spreadsheet xlsx, map columns, "
@@ -226,11 +216,8 @@ def test_run_excel_demo(client: TestClient):
     r = client.get("/api/pipelines/demo-excel-to-file")
     assert r.status_code == 200
     run = client.post("/api/pipelines/demo-excel-to-file/run")
-    assert run.status_code == 200
-    run_id = run.json()["run_id"]
-    status = client.get(f"/api/runs/{run_id}")
-    assert status.status_code == 200
-    body = status.json()
+    assert run.status_code == 202
+    body = wait_run(client, run.json()["run_id"])
     assert body["status"] == "success", body.get("error")
     assert body["node_metrics"]["excel"]["rows_out"] == 8
     assert body["node_metrics"]["dest_csv"]["rows_out"] == 8
@@ -270,11 +257,8 @@ def test_run_sftp_demo(client: TestClient):
     r = client.get("/api/pipelines/demo-sftp-excel-to-file")
     assert r.status_code == 200
     run = client.post("/api/pipelines/demo-sftp-excel-to-file/run")
-    assert run.status_code == 200
-    run_id = run.json()["run_id"]
-    status = client.get(f"/api/runs/{run_id}")
-    assert status.status_code == 200
-    body = status.json()
+    assert run.status_code == 202
+    body = wait_run(client, run.json()["run_id"])
     assert body["status"] == "success", body.get("error")
     assert body["node_metrics"]["excel"]["rows_out"] == 8
 
@@ -283,11 +267,8 @@ def test_run_db_demo(client: TestClient):
     r = client.get("/api/pipelines/demo-db-to-file")
     assert r.status_code == 200
     run = client.post("/api/pipelines/demo-db-to-file/run")
-    assert run.status_code == 200
-    run_id = run.json()["run_id"]
-    status = client.get(f"/api/runs/{run_id}")
-    assert status.status_code == 200
-    body = status.json()
+    assert run.status_code == 202
+    body = wait_run(client, run.json()["run_id"])
     assert body["status"] == "success", body.get("error")
     assert body["node_metrics"]["pg"]["rows_out"] >= 10
 

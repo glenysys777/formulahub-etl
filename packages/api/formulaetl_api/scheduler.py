@@ -1,55 +1,33 @@
 """Lightweight cron pipeline scheduler (Community self-hosted).
 
-Persists schedules next to the pipeline store. A background poll loop fires
-``POST``-equivalent runs when due. Cloud HA scheduling is an Enterprise/paid
-direction — not claimed in this Community build.
+Persists schedules in the shared SQLite control-plane DB (legacy JSON under
+``data/schedules/`` is migrated on first ensure). A background poll loop
+*enqueues* runs when due — execution is the worker's job. Cloud HA scheduling
+is an Enterprise/paid direction — not claimed in this Community build.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import threading
 import time
-from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
+
+from formulaetl_api.store import ScheduleSpec, ScheduleStore
+
+__all__ = [
+    "ScheduleSpec",
+    "ScheduleStore",
+    "PipelineScheduler",
+    "cron_matches",
+    "next_cron_fire",
+]
 
 
 Clock = Callable[[], float]
 RunCallback = Callable[[str], Any]
-
-
-@dataclass
-class ScheduleSpec:
-    pipeline_id: str
-    enabled: bool = False
-    cron: str = "*/5 * * * *"  # every 5 minutes
-    timezone: str = "UTC"
-    next_run_at: float | None = None  # epoch seconds
-    last_run_at: float | None = None
-    last_run_id: str | None = None
-    last_status: str | None = None
-    updated_at: float | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ScheduleSpec":
-        return cls(
-            pipeline_id=str(data["pipeline_id"]),
-            enabled=bool(data.get("enabled", False)),
-            cron=str(data.get("cron") or "*/5 * * * *"),
-            timezone=str(data.get("timezone") or "UTC"),
-            next_run_at=data.get("next_run_at"),
-            last_run_at=data.get("last_run_at"),
-            last_run_id=data.get("last_run_id"),
-            last_status=data.get("last_status"),
-            updated_at=data.get("updated_at"),
-        )
 
 
 def _parse_field(field_s: str, min_v: int, max_v: int) -> set[int]:
@@ -148,53 +126,12 @@ def next_cron_fire(
     raise ValueError(f"No cron match within {max_minutes} minutes for {cron!r}")
 
 
-class ScheduleStore:
-    def __init__(self, root: Path):
-        self.root = root
-        self._lock = threading.Lock()
-
-    def ensure(self) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-
-    def _path(self, pipeline_id: str) -> Path:
-        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in pipeline_id)
-        return self.root / f"{safe}.json"
-
-    def get(self, pipeline_id: str) -> ScheduleSpec | None:
-        path = self._path(pipeline_id)
-        if not path.exists():
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return ScheduleSpec.from_dict(data)
-
-    def save(self, spec: ScheduleSpec) -> None:
-        self.ensure()
-        with self._lock:
-            self._path(spec.pipeline_id).write_text(
-                json.dumps(spec.to_dict(), indent=2), encoding="utf-8"
-            )
-
-    def list(self) -> list[ScheduleSpec]:
-        self.ensure()
-        out: list[ScheduleSpec] = []
-        for path in sorted(self.root.glob("*.json")):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                out.append(ScheduleSpec.from_dict(data))
-            except Exception:
-                continue
-        return out
-
-    def delete(self, pipeline_id: str) -> bool:
-        path = self._path(pipeline_id)
-        if path.exists():
-            path.unlink()
-            return True
-        return False
-
-
 class PipelineScheduler:
-    """Background poller that fires due schedules via ``run_callback(pipeline_id)``."""
+    """Background poller that fires due schedules via ``run_callback(pipeline_id)``.
+
+    The callback should *enqueue* a run (return quickly with run_id + queued status),
+    not block on PipelineRunner.
+    """
 
     def __init__(
         self,
@@ -278,7 +215,7 @@ class PipelineScheduler:
                 try:
                     result = self.run_callback(fresh.pipeline_id)
                     run_id = None
-                    status = "triggered"
+                    status = "queued"
                     if isinstance(result, dict):
                         run_id = result.get("run_id")
                         status = str(result.get("status") or status)

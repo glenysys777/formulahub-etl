@@ -70,14 +70,21 @@ make demo      # run the spectacular pipeline CLI
 ### Run API + UI
 
 ```bash
-# terminal 1
+# terminal 1 — API (embeds a worker thread by default)
 make api          # http://127.0.0.1:18765
 
 # terminal 2
 make web          # http://127.0.0.1:18766
 ```
 
-Open the UI → load a demo → **Run pipeline**. Watch logs, rows processed, rejects, and duration.
+Optional split worker (API only enqueues):
+
+```bash
+FORMULAETL_EMBEDDED_WORKER=0 make api
+make worker       # python -m formulaetl_api.worker
+```
+
+Open the UI → load a demo → **Run pipeline**. `POST /run` returns **202 queued**; poll run status for logs, rows, rejects, and duration.
 
 Or with Docker:
 

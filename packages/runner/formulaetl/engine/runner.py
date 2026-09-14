@@ -140,6 +140,8 @@ class PipelineRunner:
                 if "feed" not in cres.metrics.extras:
                     cres.metrics.extras["feed"] = nplan.feed
 
+                if "component_type" not in cres.metrics.extras:
+                    cres.metrics.extras["component_type"] = node.type
                 node_outputs[nid] = cres
                 ctx.record_metrics(nid, cres.metrics)
                 if cres.artifact and cres.artifact.temp:
@@ -163,9 +165,8 @@ class PipelineRunner:
                 "rows_rejected": total_rej,
                 "batch_size": self.batch_size,
             }
-            result.node_metrics = ctx.all_metrics()
             result.outputs = {
-                nid: _summarize_output(o)
+                nid: {**_summarize_output(o), "component_type": node_map[nid].type}
                 for nid, o in node_outputs.items()
             }
             _log("Pipeline completed successfully")
@@ -174,14 +175,37 @@ class PipelineRunner:
             result.status = "failed"
             result.error = str(exc)
             _log(f"Pipeline FAILED: {exc}")
+            # Partial aggregates if some nodes finished
+            if node_outputs:
+                result.metrics = {
+                    "rows_in": sum(o.metrics.rows_in for o in node_outputs.values()),
+                    "rows_out": sum(o.metrics.rows_out for o in node_outputs.values()),
+                    "rows_rejected": sum(
+                        o.metrics.rows_rejected for o in node_outputs.values()
+                    ),
+                    "batch_size": self.batch_size,
+                }
+                result.outputs = {
+                    nid: {
+                        **_summarize_output(o),
+                        "component_type": pipeline.node_map()[nid].type
+                        if nid in pipeline.node_map()
+                        else "unknown",
+                    }
+                    for nid, o in node_outputs.items()
+                }
 
         finally:
+            # Always persist node metrics (including partial failure)
+            result.node_metrics = ctx.all_metrics()
             _cleanup_temps(temp_handles, _log)
 
         result.duration_ms = (time.perf_counter() - t0) * 1000
+        if "duration_ms" not in result.metrics:
+            result.metrics = dict(result.metrics)
         result.metrics["duration_ms"] = round(result.duration_ms, 2)
         result.logs = logs
-        if exec_plan is not None and "plan" not in result.metrics:
+        if exec_plan is not None and "planner_nodes" not in result.metrics:
             result.metrics["planner_nodes"] = len(exec_plan.nodes)
         return result
 
