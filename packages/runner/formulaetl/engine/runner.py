@@ -177,6 +177,11 @@ class PipelineRunner:
                     remaining_consumers[e.source] = remaining_consumers.get(e.source, 1) - 1
                     if remaining_consumers[e.source] <= 0:
                         _release_result_rows(node_outputs[e.source])
+                        # After a sink pulls a lazy chain, harvest finalized metrics.
+                        from formulaetl.sdk.adapter import harvest_lazy_metrics
+
+                        harvest_lazy_metrics(node_outputs[e.source])
+                        ctx.record_metrics(e.source, node_outputs[e.source].metrics)
 
                 total_in += cres.metrics.rows_in
                 total_out += cres.metrics.rows_out
@@ -186,6 +191,17 @@ class PipelineRunner:
                     f"out={cres.metrics.rows_out} rejected={cres.metrics.rows_rejected} "
                     f"feed={nplan.feed} ({cres.metrics.duration_ms:.1f}ms)"
                 )
+
+            # Final harvest for any lazy nodes still pending (e.g. last sink).
+            from formulaetl.sdk.adapter import harvest_lazy_metrics
+
+            for nid, o in node_outputs.items():
+                harvest_lazy_metrics(o)
+                ctx.record_metrics(nid, o.metrics)
+
+            total_in = sum(o.metrics.rows_in for o in node_outputs.values())
+            total_out = sum(o.metrics.rows_out for o in node_outputs.values())
+            total_rej = sum(o.metrics.rows_rejected for o in node_outputs.values())
 
             result.status = "success"
             result.metrics = {

@@ -27,10 +27,9 @@ class _Identity(BaseComponent):
 
 
 def test_run_batched_does_not_materialize_large_output(tmp_path: Path, monkeypatch):
-    """Guardrail: spill path keeps ComponentResult.rows empty above threshold."""
+    """Guardrail: lazy/spill path keeps ComponentResult.rows empty above threshold."""
     monkeypatch.setenv("FORMULAETL_STREAM_SPILL", "1")
     monkeypatch.setenv("FORMULAETL_SPILL_THRESHOLD", "100")
-    # Re-import threshold used by adapter at call time via spill module.
     import formulaetl.sdk.spill as spill_mod
     import formulaetl.sdk.adapter as adapter_mod
 
@@ -50,13 +49,17 @@ def test_run_batched_does_not_materialize_large_output(tmp_path: Path, monkeypat
         batch_size=50,
     )
     result = run_batched(_Identity({}), ctx, ds, batch_size=50)
-    assert result.metrics.rows_out == n
     assert result.dataset is not None
     # Must not hold the full working set on the result adapter list.
     assert len(result.rows) == 0
-    assert result.metrics.extras.get("spill") is True
-    # Dataset remains iterable and complete.
+    # Pull the lazy chain — completeness without materializing onto result.rows.
     assert sum(len(b) for b in result.dataset.iter_batches(50)) == n
+    from formulaetl.sdk.adapter import harvest_lazy_metrics
+
+    harvest_lazy_metrics(result)
+    assert result.metrics.rows_out == n
+    assert result.metrics.extras.get("lazy") is True or result.metrics.extras.get("spill") is True
+    assert len(result.rows) == 0
 
 
 def test_dataset_iter_batches_does_not_auto_cache(tmp_path: Path):

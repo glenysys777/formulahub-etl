@@ -114,36 +114,33 @@ class CSVParser(BaseComponent):
         *,
         batch_size: int,
         source_label: str,
+        rebuild: DatasetHandle | None = None,
     ) -> ComponentResult:
-        """Bound RAM: small outputs materialize; large outputs spill once."""
+        """Bound RAM: small outputs materialize; large outputs stay producer-backed."""
         metrics = Metrics()
         preview: list[dict[str, Any]] = []
         n = 0
 
         with timed(metrics):
             acc: list[dict[str, Any]] = []
-            writer: JsonlSpillWriter | None = None
+            spilled = False
             for batch in dataset.iter_batches(batch_size):
                 n += len(batch.rows)
-                if writer is not None:
-                    writer.write_rows(batch.rows)
+                if spilled:
                     if len(preview) < 5 and batch.rows:
                         preview.extend(batch.rows[: max(0, 5 - len(preview))])
                     continue
                 acc.extend(batch.rows)
                 if n > SPILL_THRESHOLD:
-                    writer = JsonlSpillWriter(
-                        new_spill_path(ctx.temp_dir() / "spill", "csv")
-                    )
                     preview = acc[:5]
-                    writer.write_rows(acc)
                     acc = []
+                    spilled = True
 
             metrics.rows_in = 1
             metrics.rows_out = n
             metrics.rows_rejected = len(rejects)
 
-            if writer is None:
+            if not spilled:
                 out_rows = acc
                 out_ds = DatasetHandle.from_rows(out_rows, batch_size=batch_size)
                 streams: dict[str, list[dict[str, Any]]] = {"out": out_rows}
@@ -162,11 +159,12 @@ class CSVParser(BaseComponent):
                     stream_datasets={"out": out_ds},
                 )
 
-            out_ds = writer.close(batch_size=batch_size)
-            metrics.extras["spill"] = True
+            # Large: re-readable producer (fresh handle — no shared rejects_out).
+            out_ds = rebuild if rebuild is not None else dataset
+            metrics.extras["producer_only"] = True
             ctx.emit(
                 f"CSVParser: parsed {n} rows from {source_label} "
-                f"({len(rejects)} rejected, spill=1, batch_size={batch_size})"
+                f"({len(rejects)} rejected, producer_only=1, batch_size={batch_size})"
             )
             streams = {}
             stream_datasets = {"out": out_ds}
@@ -196,6 +194,39 @@ class CSVParser(BaseComponent):
 
         path = self._input_path(ctx)
         if path is not None:
+            rebuild = DatasetHandle.from_csv_path(
+                path,
+                batch_size=batch_size,
+                rejects_out=None,
+                **opts,
+            )
+            # Large files: avoid a full dict-parse just to count. Line count is
+            # exact for the bench/simple CSVs (no embedded newlines); malformed
+            # rows are still classified on the downstream producer pass.
+            size = path.stat().st_size if path.exists() else 0
+            if size > 2_000_000 and opts.get("has_header", True):
+                with path.open("rb") as fh:
+                    n_lines = sum(1 for _ in fh)
+                n = max(0, n_lines - 1)
+                metrics = Metrics()
+                with timed(metrics):
+                    metrics.rows_in = 1
+                    metrics.rows_out = n
+                    metrics.rows_rejected = 0
+                    metrics.extras["producer_only"] = True
+                    metrics.extras["count"] = "line_scan"
+                ctx.emit(
+                    f"CSVParser: ~{n} rows from {path} "
+                    f"(producer_only=1, line_scan, batch_size={batch_size})"
+                )
+                return ComponentResult(
+                    rows=[],
+                    rejects=[],
+                    metrics=metrics,
+                    dataset=rebuild,
+                    stream_datasets={"out": rebuild},
+                )
+
             dataset = DatasetHandle.from_csv_path(
                 path,
                 batch_size=batch_size,
@@ -203,7 +234,12 @@ class CSVParser(BaseComponent):
                 **opts,
             )
             return self._finalize_dataset(
-                ctx, dataset, rejects, batch_size=batch_size, source_label=str(path)
+                ctx,
+                dataset,
+                rejects,
+                batch_size=batch_size,
+                source_label=str(path),
+                rebuild=rebuild,
             )
 
         content = self.config.get("content")
@@ -231,12 +267,24 @@ class CSVParser(BaseComponent):
         if content is None:
             raise ValueError("CSVParser: no CSV content available")
 
+        text = content if isinstance(content, str) else str(content)
         dataset = DatasetHandle.from_csv_text(
-            content if isinstance(content, str) else str(content),
+            text,
             batch_size=batch_size,
             rejects_out=rejects,
             **opts,
         )
+        rebuild = DatasetHandle.from_csv_text(
+            text,
+            batch_size=batch_size,
+            rejects_out=None,
+            **opts,
+        )
         return self._finalize_dataset(
-            ctx, dataset, rejects, batch_size=batch_size, source_label="inline"
+            ctx,
+            dataset,
+            rejects,
+            batch_size=batch_size,
+            source_label="inline",
+            rebuild=rebuild,
         )

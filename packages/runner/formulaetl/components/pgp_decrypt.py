@@ -172,9 +172,10 @@ class PGPDecrypt(BaseComponent):
             else:
                 out_path = ctx.temp_dir() / "pgp_decrypt.out"
             handle = write_bytes_artifact(out_path, out_bytes, temp=temp)
+            n_raw, n_out = len(raw), len(out_bytes)
 
             ctx.emit(
-                f"PGPDecrypt: decrypted {len(raw)} → {len(out_bytes)} bytes → {out_path}"
+                f"PGPDecrypt: decrypted {n_raw} → {n_out} bytes → {out_path}"
             )
             metrics.rows_out = 1
 
@@ -183,14 +184,21 @@ class PGPDecrypt(BaseComponent):
                 "artifact": handle.to_dict(),
             }
             # Tiny demo fixtures may expose content for unit tests; large files stay path-only.
-            if len(out_bytes) <= _CONTENT_PREVIEW_MAX and len(raw) <= _CONTENT_PREVIEW_MAX:
+            if n_out <= _CONTENT_PREVIEW_MAX and n_raw <= _CONTENT_PREVIEW_MAX:
                 try:
                     artifacts["content"] = out_bytes.decode("utf-8")
                 except UnicodeDecodeError:
                     artifacts["content"] = out_bytes.decode("utf-8", errors="replace")
 
+            # Drop large ciphertext/plaintext copies before returning.
+            raw = b""
+            decrypted = None
+            plaintext = None
+            if n_out > _CONTENT_PREVIEW_MAX:
+                out_bytes = b""
+
         return ComponentResult(
-            rows=[{"_decrypted_size": len(out_bytes)}],
+            rows=[{"_decrypted_size": n_out}],
             metrics=metrics,
             artifacts=artifacts,
             artifact=handle,
