@@ -198,11 +198,26 @@ class PipelineStore:
             legacy_json_root if legacy_json_root is not None else inferred_legacy
         )
         self._lock = threading.Lock()
+        # Re-entrancy guards: migrate calls get/save, which call ensure again.
+        # Without these, ensure↔migrate loops forever (RecursionError is swallowed
+        # per-file, then save→ensure→migrate→save spins at 100% CPU).
+        self._legacy_migrating = False
+        self._legacy_migrated = False
 
     def ensure(self) -> None:
         self.db.ensure()
-        if self.legacy_json_root is not None:
+        if (
+            self.legacy_json_root is None
+            or self._legacy_migrated
+            or self._legacy_migrating
+        ):
+            return
+        self._legacy_migrating = True
+        try:
             self._migrate_legacy_json()
+            self._legacy_migrated = True
+        finally:
+            self._legacy_migrating = False
 
     def _migrate_legacy_json(self) -> None:
         root = self.legacy_json_root
@@ -908,11 +923,24 @@ class ScheduleStore:
             legacy_json_root if legacy_json_root is not None else inferred_legacy
         )
         self._lock = threading.Lock()
+        # Same ensure↔migrate re-entrancy hazard as PipelineStore (see there).
+        self._legacy_migrating = False
+        self._legacy_migrated = False
 
     def ensure(self) -> None:
         self.db.ensure()
-        if self.legacy_json_root is not None:
+        if (
+            self.legacy_json_root is None
+            or self._legacy_migrated
+            or self._legacy_migrating
+        ):
+            return
+        self._legacy_migrating = True
+        try:
             self._migrate_legacy_json()
+            self._legacy_migrated = True
+        finally:
+            self._legacy_migrating = False
 
     def _migrate_legacy_json(self) -> None:
         root = self.legacy_json_root
