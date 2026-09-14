@@ -3,7 +3,7 @@
 Claims in sales/README are **not** evidence. Each row is a statement we are willing to make only with a command, git SHA, and date.
 
 **Audit SHA (main / Phase A merge):** `cecb1af` (PR #4)  
-**Phase B branch tip:** `92b3d7a` (`cursor/batch-stream-abstraction-d316`)  
+**Phase B branch tip:** `122f370` (code `92b3d7a` + evidence SHA note)  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
@@ -15,7 +15,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -v --tb=short` | **99 passed**, 163 warnings (pgpy deprecations), 10.05s. Includes 12 new Phase B unit tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/Kafka/Snowflake. | this PR | 2026-09-14 |
+| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -v --tb=short` | **99 passed**, 163 warnings (pgpy deprecations), 10.05s. Includes 12 new Phase B unit tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/Kafka/Snowflake. | `92b3d7a` | 2026-09-14 |
 | A2 | Web production build | PROVEN **skipped this PR** | UI untouched | Phase A `npm run build` still stands; no `apps/web` changes in Phase B | Phase A | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` | PROVEN **absent** | `ls .github/workflows` | Still no workflow files | `cecb1af` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
