@@ -9,7 +9,7 @@ Claims in sales/README are **not** evidence. Each row is a statement we are will
 **Phase F merge tip:** `3d1d9c9`  
 **Phase G merge tip:** `5525b26`  
 **Phase I (wedge evidence) tip:** `a4978a1`  
-**Phase Perf (this PR) tip:** *(filled at merge; working SHA below)*  
+**Phase Perf (this PR) tip:** `0067c52`  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.x · **pytest:** 9.x
 
@@ -23,7 +23,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` (default CI) | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q -m "not live and not bench"` | **167 passed**, 1 skipped (`RUN_CSV_1M`), 6 deselected (`live`+`bench`). `FORMULAETL_DEMO=1`. Not live AWS/SFTP. | this PR | 2026-09-14 |
+| A1 | Pytest suite on `tests/` (default CI) | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q -m "not live and not bench"` | **167 passed**, 1 skipped (`RUN_CSV_1M`), 6 deselected (`live`+`bench`). `FORMULAETL_DEMO=1`. Not live AWS/SFTP. | this PR (`0067c52`) | 2026-09-14 |
 | A2 | Web production build | PROVEN | `cd apps/web && npm run build` | Optional CI job `web-build` | `5525b26` | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` / PRs | PROVEN | `.github/workflows/ci.yml` | pytest DEMO=1 `-m "not live and not bench"`; optional npm build. **No live cloud. No heavy bench.** | `a4978a1` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
@@ -63,7 +63,7 @@ CI never sets `RUN_LIVE_WEDGE`. Green Actions ≠ LIVE_CLOUD PROVEN.
 |----|-------|--------|----------|-----|------|
 | D1 | Runner DAG still sequential **inside** a worker | PROVEN | `PipelineRunner.run` topological loop | `1b82aa5` | 2026-09-14 |
 | D2–D4 | ArtifactHandle / RowBatch / CSV chunking | PROVEN | Phase B/C | `dce51a6` | 2026-09-14 |
-| D14 | Lazy RowBatch chain + streaming sinks + gpg path-to-path | PROVEN | `sdk/adapter.py` `run_batched`, `consume_dataset`, `pgp_decrypt` gpg | this PR | 2026-09-14 |
+| D14 | Lazy RowBatch chain + streaming sinks + gpg path-to-path | PROVEN | `sdk/adapter.py` `run_batched`, `consume_dataset`, `pgp_decrypt` gpg | this PR (`0067c52`) | 2026-09-14 |
 | D5 | Run history is durable SQLite | PROVEN | Phase D+E | `1b82aa5` | 2026-09-14 |
 | D6 | Optional API key when `FORMULAETL_API_KEY` set | PROVEN | Phase F | `3d1d9c9` | 2026-09-14 |
 | D7 | Secrets via SecretProvider refs | PROVEN | Phase F | `3d1d9c9` | 2026-09-14 |
@@ -91,7 +91,7 @@ Merged on main as `5525b26`. Validate API, design-partner pack, CI `-m "not live
 
 ---
 
-## J. Phase I — LOCAL/DEMO wedge correctness + scale evidence (**this PR**)
+## J. LOCAL/DEMO wedge correctness + scale evidence (Phase Perf `0067c52`)
 
 **Classification: LOCAL/DEMO only — never LIVE_CLOUD.**
 
@@ -106,12 +106,12 @@ Reconciliation invariant (must hold or test fails): **`N = R + D + L`** where
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
 | J0 | Bench harness + pytest markers | PROVEN **LOCAL/DEMO** | `tests/bench/`, `pytest` marker `bench`, `make bench` / `RUN_BENCH=1` | Heavy scales skipped unless `RUN_BENCH=1`; CI excludes `-m bench` | `a4978a1` | 2026-09-14 |
-| J1 | Always-on correctness (small N) | PROVEN **LOCAL/DEMO** | `pytest tests/bench -m "not bench"` | plan math + 200-row + file→file reconcile | this PR | 2026-09-14 |
-| J2 | Scale 10K full wedge | PROVEN **LOCAL/DEMO** | `RUN_BENCH=1 … --scales 10000` | See after table | this PR | 2026-09-14 |
-| J3 | Scale 100K full wedge | PROVEN **LOCAL/DEMO** | `--scales 100000` | See after table | this PR | 2026-09-14 |
-| J4 | Scale 1M full wedge | PROVEN **LOCAL/DEMO** | `--scales 1000000` | See after table | this PR | 2026-09-14 |
-| J5 | Scale 10M optional | PROVEN **LOCAL/DEMO** | `BENCH_INCLUDE_10M=1 make bench-10m` | Completes (not ≤400 MB). See 10M row | this PR | 2026-09-14 |
-| J6 | No full materialization regression | PROVEN | `pytest tests/unit/test_no_full_materialization.py` | Lazy/spill path keeps `result.rows` empty above threshold | this PR | 2026-09-14 |
+| J1 | Always-on correctness (small N) | PROVEN **LOCAL/DEMO** | `pytest tests/bench -m "not bench"` | plan math + 200-row + file→file reconcile | this PR (`0067c52`) | 2026-09-14 |
+| J2 | Scale 10K full wedge | PROVEN **LOCAL/DEMO** | `RUN_BENCH=1 … --scales 10000` | See after table | this PR (`0067c52`) | 2026-09-14 |
+| J3 | Scale 100K full wedge | PROVEN **LOCAL/DEMO** | `--scales 100000` | See after table | this PR (`0067c52`) | 2026-09-14 |
+| J4 | Scale 1M full wedge | PROVEN **LOCAL/DEMO** | `--scales 1000000` | See after table | this PR (`0067c52`) | 2026-09-14 |
+| J5 | Scale 10M optional | PROVEN **LOCAL/DEMO** | `BENCH_INCLUDE_10M=1 make bench-10m` | Completes (not ≤400 MB). See 10M row | this PR (`0067c52`) | 2026-09-14 |
+| J6 | No full materialization regression | PROVEN | `pytest tests/unit/test_no_full_materialization.py` | Lazy/spill path keeps `result.rows` empty above threshold | this PR (`0067c52`) | 2026-09-14 |
 
 ### LOCAL/DEMO scale numbers (agent host, 2026-09-14)
 
@@ -165,4 +165,4 @@ See `docs/PERFORMANCE.md` for knobs and what is still DEMO.
 - Phase Perf adds streaming/lazy-chain + LOCAL/DEMO scale evidence; live connector E2E (section C / H) remains **UNPROVEN** until partner credentials exist.
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
-- Pytest **count** this PR (default markers): **167 passed**, 1 skipped, 6 deselected (`live` + `bench`).
+- Pytest **count** this PR (`0067c52`) (default markers): **167 passed**, 1 skipped, 6 deselected (`live` + `bench`).
