@@ -3,8 +3,9 @@
 Claims in sales/README are **not** evidence. Each row is a statement we are willing to make only with a command, git SHA, and date.
 
 **Audit SHA (main at start of this work):** `b162987c3667525fcffa75135bbab54e391855f5`  
-**This docs PR SHA:** _fill after commit_  
-**Date:** 2026-09-14
+**This docs PR branch tip:** fill after evidence commit (see git log on `cursor/production-readiness-audit-71a1`)  
+**Agent run date:** 2026-09-14  
+**Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
 Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
@@ -14,8 +15,8 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` | EMPTY | `python3 -m pytest tests -v --tb=short` (after seed) | _pending this run_ | | 2026-09-14 |
-| A2 | Web production build | EMPTY | `cd apps/web && npm run build` | _pending this run_ | | 2026-09-14 |
+| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -v --tb=short` | **87 passed**, 163 warnings (pgpy deprecations), 9.18s. `FORMULAETL_DEMO=1` via conftest. Not live AWS/Kafka/Snowflake. | `b162987` code + this PR docs | 2026-09-14 |
+| A2 | Web production build | PROVEN | `cd apps/web && npm run build` | **success** — `tsc -b && vite build`; vite 8.3.0; `dist/assets/index-BNQ76Tv6.js` 453.64 kB | this PR | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` | PROVEN **absent** | `ls .github/workflows` | No workflow files in repo at `b162987` | `b162987` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py`, `Makefile` `FORMULAETL_DEMO ?= 1` | Tests force `FORMULAETL_DEMO=1` | `b162987` | 2026-09-14 |
 
@@ -25,9 +26,9 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| B1 | Flagship S3→PGP→Snowflake **demo** CLI | EMPTY | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | _pending this run_ | | 2026-09-14 |
-| B2 | Kafka→Databricks **demo** CLI | EMPTY | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/api-kafka-databricks/pipeline.json` | _pending this run_ | | 2026-09-14 |
-| B3 | Lookup Join + Field Mapper demo | EMPTY | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.json` | _pending this run_ | | 2026-09-14 |
+| B1 | Flagship S3→PGP→Snowflake **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.json` | `status=success`; S3Source **[demo]** 1073 bytes; PGPDecrypt real pgpy; CSV 13 rows; SnowflakeDestination **[demo]** CSV under `data/out/snowflake/`; archive moved mock object. Metrics `rows_in=49` are **summed node counts**, not 13 source rows. | this run | 2026-09-14 |
+| B2 | Kafka→Databricks **demo** CLI | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/api-kafka-databricks/pipeline.json` | `status=success`; KafkaSource **[demo]** 8 msgs from `kafka_orders.jsonl`; DatabricksJob **[demo]** sidecar `result_state=SUCCESS`. Not a broker or workspace. | this run | 2026-09-14 |
+| B3 | Lookup Join + Field Mapper demo | PROVEN **demo only** | `FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.json` | `status=success`; left join 13×12→13; Field Mapper logged `variable failed for total=... 'abc'` then kept 13/13 (silent null). | this run | 2026-09-14 |
 | B4 | Historical founder screenshots / sidecar JSON | PROVEN as **demo artifacts only** | `docs/artifacts/EVIDENCE.md` | Documents fixture Kafka/Databricks UI; not live clusters | `b162987` | 2026-09-14 |
 
 ---
@@ -66,6 +67,5 @@ Do **not** promote C-rows to PROVEN from demo sidecars or `docs/artifacts/screen
 
 ## Notes
 
-- Pytest **count** is only valid for the command output attached to A1 on the stated SHA.
-- `docs/artifacts/EVIDENCE.md` previously cited “84 passed”; treat that as historical unless A1 matches.
-- Empty cells must stay EMPTY until a human or agent pastes stdout.
+- Pytest **count** is only valid for the command output attached to A1 on this date. This run: **87 passed** (prior `docs/artifacts/EVIDENCE.md` said 84 — stale).
+- C-rows remain UNPROVEN. Empty cells stay EMPTY until stdout is pasted.

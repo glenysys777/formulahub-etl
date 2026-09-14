@@ -125,7 +125,7 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 - Tests: `make test` → `python3 -m pytest tests` with `FORMULAETL_DEMO=1` (see `tests/conftest.py`).
 - Web: `cd apps/web && npm run build`.
 - **No `.github/workflows`.** There is no GitHub Actions gate on `main`.
-- Evidence of a given pytest/npm run belongs in `docs/PRODUCTION_EVIDENCE.md` (filled when commands are actually executed).
+- This audit run (2026-09-14): **pytest 87 passed**; **`npm run build` succeeded**. Details: `docs/PRODUCTION_EVIDENCE.md`.
 
 ---
 
