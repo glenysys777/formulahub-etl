@@ -28,7 +28,8 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 | SFTP / Postgres / MySQL / SQLite Destination | DEMO mocks or local DB | DEMO / ALPHA |
 | Archive Files / Logger | Move inputs; metrics | ALPHA |
 | Scheduler | In-process cron per pipeline | DEMO / ALPHA |
-| Studio chrome | Collapsible inspector, type-to-place, status `work_dir` | ALPHA (this PR) |
+| Studio chrome | Collapsible inspector, type-to-place, status `work_dir` | ALPHA |
+| Desktop shell | Electron: spawn/reuse API + Studio WebView; Mac `.app` on macOS | ALPHA (this wave) |
 
 ## Studio UX (this wave)
 
@@ -41,4 +42,4 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 ## Explicitly not in this wave
 
 - No new connector types
-- Desktop `.app` shell → see `DESKTOP_SHELL.md` (next wave)
+- Desktop `.app` shell → see `DESKTOP_SHELL.md` (**Electron shell shipped**; Mac `.app` built on macOS)

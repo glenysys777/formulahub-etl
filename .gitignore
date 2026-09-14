@@ -25,3 +25,6 @@ dist/
 data/.formulaetl_secrets_key
 htmlcov/
 apps/web/dist/
+apps/desktop/release/
+apps/desktop/node_modules/
+data/out/mac-pack/
