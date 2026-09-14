@@ -82,10 +82,14 @@ class SnowflakeDestination(BaseComponent):
             writer: csv.DictWriter | None = None
             for batch in dataset.iter_batches(getattr(ctx, "batch_size", None)):
                 n_batches += 1
-                clean = [_clean_row(r) for r in batch.rows]
-                n_in += len(batch.rows)
-                if not clean:
+                raw_rows = batch.rows
+                n_in += len(raw_rows)
+                if not raw_rows:
                     continue
+                if any(k.startswith("_") for k in raw_rows[0]):
+                    clean = [_clean_row(r) for r in raw_rows]
+                else:
+                    clean = raw_rows
                 if writer is None:
                     fieldnames = list(clean[0].keys())
                     for r in clean[1:]:

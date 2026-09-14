@@ -171,7 +171,7 @@ def run_batched(
         with timed(metrics):
             for batch in dataset.iter_batches(bs):
                 state.n_batches += 1
-                cres = component.run(ctx, list(batch.rows))
+                cres = component.run(ctx, batch.rows)
                 if cres.rejects:
                     if rej_writer_holder["w"] is None:
                         rej_writer_holder["w"] = JsonlSpillWriter(rej_path)
@@ -181,7 +181,7 @@ def run_batched(
                 metrics.rows_out += cres.metrics.rows_out
                 metrics.rows_rejected += cres.metrics.rows_rejected
                 yield RowBatch(
-                    rows=list(cres.rows),
+                    rows=cres.rows,
                     batch_index=batch.batch_index,
                     eof=batch.eof,
                 )

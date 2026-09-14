@@ -26,16 +26,16 @@
 
 ## How the runtime actually works (from code)
 
-### Data path — `list[dict]` **and** giant `bytes`
+### Data path — bounded batches + optional spill (still one process)
 
 `PipelineRunner` (`packages/runner/formulaetl/engine/runner.py`) walks a DAG in **topological order, one node at a time**, in a single Python process.
 
-- **Row path:** every transform/sink receives `input_rows: list[dict[str, Any]]`. Results are `ComponentResult.rows` (and optional `rejects` / named `streams`). The **entire working set is in RAM**. There is no Arrow, no chunk iterator, no spill-to-disk, no checkpoint.
-- **Binary path:** S3 / SFTP / local file / PGP put the **full object** in `artifacts["bytes"]` and `ctx.variables["upstream_bytes"]`. The runner copies those bytes into the next component’s `config`. Decrypt + CSV parse then materializes **all rows** as dicts.
+- **Row path:** the planner feeds row-wise nodes bounded `RowBatch`es. Large hops use a **lazy producer chain**; streaming sinks (`consume_dataset`) pull one pass. `ComponentResult.rows` is a small/debug adapter — above `FORMULAETL_SPILL_THRESHOLD` it stays empty. Rejects fan-out can spill JSONL. **Not Spark.** There is no Arrow runtime and no checkpoint/restart.
+- **Binary path:** S3 / SFTP / local file / PGP prefer **on-disk `ArtifactHandle`**. Large PGP decrypt uses `gpg` file-to-file when present (pgpy fallback for small fixtures). The runner does **not** inject whole-object `bytes` into the next node when a path exists.
 - Independent branches are **not** parallel. Metrics `rows_in`/`rows_out` are **summed across nodes**, so they are not a pipeline-level distinct row count.
 - Default `FORMULAETL_DEMO=1` (`PipelineRunner.__init__` and API `DEMO_MODE`).
 
-This is a **demo / laptop DAG**, not a data plane.
+This is a **laptop/demo DAG with bounded batches**, not a distributed data plane. See `docs/PERFORMANCE.md`.
 
 ### Scheduler
 
@@ -84,7 +84,7 @@ Default tests and `make demo*` set `FORMULAETL_DEMO=1`. Live branches exist in s
 | **S3** | Read `data/s3/<bucket>/<key>`; optional paginated demo list | `boto3` `download_file` to temp + retries/timeouts; paginated `list_objects_v2` | **No** |
 | **SFTP** | Copy `fixtures/sample/*` via `shutil` | `paramiko` stream `get`; timeouts/retries; **RejectPolicy** host keys by default; password and/or key | **No** |
 | **PGP** | Real `pgpy` on demo keys / encrypted fixture; path/temp artifact | Same; `private_key_ref` / `passphrase_ref`; large outputs path-only | Crypto is real; **ops/secrets not production** |
-| **CSV** | Chunked `iter_csv_batches` / DictReader; malformed policy | Same | **ALPHA** for laptop-sized jobs; adapter still materializes rows for sinks |
+| **CSV** | Chunked `iter_csv_batches` / DictReader; malformed policy; large files producer-only | Same | **ALPHA** for laptop-sized jobs; sinks stream in DEMO |
 | **Snowflake** | Write CSV + `.load.json` under `data/out/snowflake` | Optional `snowflake-connector-python` `INSERT … executemany` (not COPY). Falls back to demo if `account` missing | **No** |
 | **Postgres** | SQLite / CSV fixture / inline 3 rows | `psycopg` when `FORMULAETL_DEMO=0` + real host/DSN | **No** |
 | **MySQL** | Same demo fallbacks | `pymysql` extra (not a default install extra) | **No** |
@@ -135,7 +135,7 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 
 | FEATURE | CURRENT LEVEL | TARGET (Customer #1) | PRODUCTION READY? | DEMO ONLY? | RISK | NEXT ACTION (Phase B — do not do in this PR) |
 |---------|---------------|----------------------|-------------------|------------|------|-----------------------------------------------|
-| Sequential DAG runner (`list[dict]` + full-object `bytes`) | DEMO | PRODUCTION (chunked/spill or worker data plane) | No | Default path yes | OOM; no restart; summed metrics lie | Design bounded batches; **do not claim Spark** |
+| Sequential DAG runner (`list[dict]` + full-object `bytes`) | DEMO | PRODUCTION (chunked/spill or worker data plane) | Partial | Default path yes | OOM on blocking nodes (sort/join/keep-last); no restart | Batches + lazy chain + gpg path are in; **do not claim Spark** |
 | Parallel / streaming runtime | DEMO (absent) | PRODUCTION | No | N/A | Kafka “source” is a finite pull | Separate stream design later; not this PR |
 | Pipeline JSON on disk | ALPHA | PRODUCTION (versioned, validated) | No | Demos yes | No migrations, no RBAC | Keep JSON; add schema + secret stripping |
 | Run store | ALPHA (SQLite) | PRODUCTION | No | Demos yes | Local file DB; no Postgres yet | Optional Postgres later |
@@ -146,7 +146,7 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | CI/CD gate | ALPHA (GHA pytest + npm build, DEMO=1) | PRODUCTION | No | No live cloud in CI | Live E2E still manual | Keep honesty; partner checklist |
 | Visual designer (Vite) | ALPHA | PRODUCTION UI | No (runtime not behind it) | UI can be static | Vercel ≠ ETL runtime | Keep UI; document API requirement |
 | Community cron scheduler | DEMO | DESIGN PARTNER (single node) | No | Yes | In-process poll; no HA | External cron or queue; not K8s operator yet |
-| Local file / Excel / CSV parse | ALPHA (CSV chunked + policy) | PRODUCTION (size limits) | No | Fixtures | Excel/JSON still whole-file; CSV adapter materializes | Keep chunking; spill later |
+| Local file / Excel / CSV parse | ALPHA (CSV producer + streaming sinks) | PRODUCTION (size limits) | No | Fixtures | Excel/JSON still whole-file; sort/join materialize | Keep chunking; gpg+lazy chain for wedge |
 | Schema validate / transform / filter / sort / aggregate / dedupe | ALPHA | PRODUCTION | No | Sample data | In-memory algorithms | Same data-plane limits |
 | Field Mapper (variables + exprs) | ALPHA | DESIGN PARTNER | No | Demo pipelines | AST subset; silent nulls | Typed errors; tests on customer schemas |
 | Lookup Join | ALPHA | DESIGN PARTNER | No | File lookup demo | Nested-loop RAM | Spill / size guard |

@@ -8,7 +8,8 @@ Claims in sales/README are **not** evidence. Each row is a statement we are will
 **Phase D+E merge tip:** `1b82aa5`  
 **Phase F merge tip:** `3d1d9c9`  
 **Phase G merge tip:** `5525b26`  
-**Phase I (this PR) tip:** `a4978a1`  
+**Phase I (wedge evidence) tip:** `a4978a1`  
+**Phase Perf (this PR) tip:** *(filled at merge; working SHA below)*  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.x · **pytest:** 9.x
 
@@ -22,7 +23,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` (default CI) | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q -m "not live and not bench"` | **162 passed**, 1 skipped (`RUN_CSV_1M`), 6 deselected (`live`+`bench`). `FORMULAETL_DEMO=1`. Not live AWS/SFTP. | `a4978a1` | 2026-09-14 |
+| A1 | Pytest suite on `tests/` (default CI) | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q -m "not live and not bench"` | **167 passed**, 1 skipped (`RUN_CSV_1M`), 6 deselected (`live`+`bench`). `FORMULAETL_DEMO=1`. Not live AWS/SFTP. | this PR | 2026-09-14 |
 | A2 | Web production build | PROVEN | `cd apps/web && npm run build` | Optional CI job `web-build` | `5525b26` | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` / PRs | PROVEN | `.github/workflows/ci.yml` | pytest DEMO=1 `-m "not live and not bench"`; optional npm build. **No live cloud. No heavy bench.** | `a4978a1` | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
@@ -62,6 +63,7 @@ CI never sets `RUN_LIVE_WEDGE`. Green Actions ≠ LIVE_CLOUD PROVEN.
 |----|-------|--------|----------|-----|------|
 | D1 | Runner DAG still sequential **inside** a worker | PROVEN | `PipelineRunner.run` topological loop | `1b82aa5` | 2026-09-14 |
 | D2–D4 | ArtifactHandle / RowBatch / CSV chunking | PROVEN | Phase B/C | `dce51a6` | 2026-09-14 |
+| D14 | Lazy RowBatch chain + streaming sinks + gpg path-to-path | PROVEN | `sdk/adapter.py` `run_batched`, `consume_dataset`, `pgp_decrypt` gpg | this PR | 2026-09-14 |
 | D5 | Run history is durable SQLite | PROVEN | Phase D+E | `1b82aa5` | 2026-09-14 |
 | D6 | Optional API key when `FORMULAETL_API_KEY` set | PROVEN | Phase F | `3d1d9c9` | 2026-09-14 |
 | D7 | Secrets via SecretProvider refs | PROVEN | Phase F | `3d1d9c9` | 2026-09-14 |
@@ -104,30 +106,44 @@ Reconciliation invariant (must hold or test fails): **`N = R + D + L`** where
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
 | J0 | Bench harness + pytest markers | PROVEN **LOCAL/DEMO** | `tests/bench/`, `pytest` marker `bench`, `make bench` / `RUN_BENCH=1` | Heavy scales skipped unless `RUN_BENCH=1`; CI excludes `-m bench` | `a4978a1` | 2026-09-14 |
-| J1 | Always-on correctness (small N) | PROVEN **LOCAL/DEMO** | `pytest tests/bench -m "not bench"` | plan math + 200-row + file→file reconcile | `a4978a1` | 2026-09-14 |
-| J2 | Scale 10K full wedge | PROVEN **LOCAL/DEMO** | `RUN_BENCH=1 … local_wedge_bench.py --scales 10000` | See table below | `a4978a1` | 2026-09-14 |
-| J3 | Scale 100K full wedge | PROVEN **LOCAL/DEMO** | `--scales 100000` | See table below | `a4978a1` | 2026-09-14 |
-| J4 | Scale 1M full wedge | PROVEN **LOCAL/DEMO** | `--scales 1000000` | See table below | `a4978a1` | 2026-09-14 |
-| J5 | Scale 10M optional | UNPROVEN / skipped | `BENCH_INCLUDE_10M=1 make bench-10m` | Not run (memory/timeboxed; ~1.4 GiB RSS at 1M suggests 10M may OOM on this host) | — | — |
+| J1 | Always-on correctness (small N) | PROVEN **LOCAL/DEMO** | `pytest tests/bench -m "not bench"` | plan math + 200-row + file→file reconcile | this PR | 2026-09-14 |
+| J2 | Scale 10K full wedge | PROVEN **LOCAL/DEMO** | `RUN_BENCH=1 … --scales 10000` | See after table | this PR | 2026-09-14 |
+| J3 | Scale 100K full wedge | PROVEN **LOCAL/DEMO** | `--scales 100000` | See after table | this PR | 2026-09-14 |
+| J4 | Scale 1M full wedge | PROVEN **LOCAL/DEMO** | `--scales 1000000` | See after table | this PR | 2026-09-14 |
+| J5 | Scale 10M optional | PROVEN **LOCAL/DEMO** | `BENCH_INCLUDE_10M=1 make bench-10m` | Completes (not ≤400 MB). See 10M row | this PR | 2026-09-14 |
+| J6 | No full materialization regression | PROVEN | `pytest tests/unit/test_no_full_materialization.py` | Lazy/spill path keeps `result.rows` empty above threshold | this PR | 2026-09-14 |
 
 ### LOCAL/DEMO scale numbers (agent host, 2026-09-14)
 
-Command:
+**Phase I before** (`a4978a1`, in-process `ru_maxrss`, includes prior scales / fixture encrypt pollution at 1M):
+
+| Scale | elapsed_s | peak_rss_mb | rows/sec | N=R+D+L |
+|------:|----------:|------------:|---------:|:-------:|
+| 10 000 | 0.296 | 62 | 33 759 | ✓ |
+| 100 000 | 2.267 | 199 | 44 111 | ✓ |
+| 1 000 000 | 23.298 | 1 432 | 42 921 | ✓ |
+| 10 000 000 | — | — | skipped (likely OOM) | — |
+
+**Phase Perf after** (child-process RSS; excludes fixture encrypt). Command:
 
 ```bash
-RUN_BENCH=1 FORMULAETL_DEMO=1 python3 scripts/local_wedge_bench.py \
-  --require-run-bench --scales 10000,100000,1000000 \
-  --source s3 --dest snowflake \
-  --out data/out/bench/local_wedge_results.json
+make bench          # 10K + 100K + 1M → data/out/bench/local_wedge_results.json
+# optional:
+BENCH_INCLUDE_10M=1 make bench-10m
 ```
+
+Host: Linux cloud agent, **4× Intel Xeon**, **~15 GiB RAM**, Python 3.12.3. `FORMULAETL_BATCH_SIZE` default 32768. Large PGP via **gpg** path-to-path.
 
 | Scale | elapsed_s | peak_rss_mb | rows/sec | N | R | D | L | N=R+D+L |
 |------:|----------:|------------:|---------:|--:|--:|--:|--:|:-------:|
-| 10 000 | 0.296 | 62 | 33 759 | 10 000 | 100 | 198 | 9 702 | ✓ |
-| 100 000 | 2.267 | 199 | 44 111 | 100 000 | 1 000 | 1 980 | 97 020 | ✓ |
-| 1 000 000 | 23.298 | 1 432 | 42 921 | 1 000 000 | 10 000 | 19 800 | 970 200 | ✓ |
+| 10 000 | 0.107 | 39 | 93 306 | 10 000 | 100 | 198 | 9 702 | ✓ |
+| 100 000 | 0.766 | 81 | 130 545 | 100 000 | 1 000 | 1 980 | 97 020 | ✓ |
+| 1 000 000 | 6.901 | 306 | 144 899 | 1 000 000 | 10 000 | 19 800 | 970 200 | ✓ |
+| 10 000 000 | 74.479 | 2 755 | 134 267 | 10 000 000 | 100 000 | 198 000 | 9 702 000 | ✓ |
 
-Fixture encrypt/prep time is **excluded** from `elapsed_s` (pipeline wall only). Peak RSS via `resource.getrusage` (Linux KB→MiB). Host: Linux cloud agent, ~15 GiB RAM, Python 3.12.3.
+1M vs Phase I: **RSS 1432→306 MB** (≤400 MB goal; stretch ≤250 MB not met). **Throughput 43k→145k rows/sec** (≥80k / ≥100k). 100K RSS 199→81 MB (≤150 MB). 10M **completes** (Talend-style OOM avoided); RSS is mostly the dedupe key set, not a second full row copy.
+
+Fixture encrypt/prep time is **excluded** from `elapsed_s` (pipeline wall in the child). Peak RSS via `resource.getrusage` in that child (Linux KB→MiB).
 
 **Honesty:** these numbers are **LOCAL/DEMO** (mock S3 under `data/s3`, demo Snowflake CSV under `data/out`). They do **not** prove live AWS/SFTP/Snowflake throughput.
 
@@ -140,11 +156,13 @@ make bench-pytest   # same scales via pytest -m bench
 BENCH_INCLUDE_10M=1 make bench-10m
 ```
 
+See `docs/PERFORMANCE.md` for knobs and what is still DEMO.
+
 ---
 
 ## Notes
 
-- Phase I adds LOCAL/DEMO wedge scale evidence; live connector E2E (section C / H) remains **UNPROVEN** until partner credentials exist.
+- Phase Perf adds streaming/lazy-chain + LOCAL/DEMO scale evidence; live connector E2E (section C / H) remains **UNPROVEN** until partner credentials exist.
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
-- Pytest **count** this PR (default markers): **162 passed**, 1 skipped, 6 deselected (`live` + `bench`).
+- Pytest **count** this PR (default markers): **167 passed**, 1 skipped, 6 deselected (`live` + `bench`).

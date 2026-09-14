@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 # Larger default batches cut per-batch Python overhead on the wedge path.
 # Override with FORMULAETL_BATCH_SIZE. See docs/PERFORMANCE.md.
-DEFAULT_BATCH_SIZE = int(os.environ.get("FORMULAETL_BATCH_SIZE", "16384") or "16384")
+DEFAULT_BATCH_SIZE = int(os.environ.get("FORMULAETL_BATCH_SIZE", "32768") or "32768")
 
 MalformedPolicy = Literal["fail", "skip", "reject"]
 ExtraColumnsPolicy = Literal["keep", "drop", "reject"]
