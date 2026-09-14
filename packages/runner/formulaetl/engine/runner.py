@@ -1,4 +1,10 @@
-"""DAG pipeline runner."""
+"""DAG pipeline runner.
+
+Honesty (not a production data plane): nodes run sequentially in one process.
+The working set is ``list[dict]`` rows plus optional whole-object ``bytes``
+artifacts (S3/SFTP/PGP). There is no chunked I/O, spill, or worker isolation.
+Default ``FORMULAETL_DEMO=1`` is fixture/mock mode.
+"""
 
 from __future__ import annotations
 
