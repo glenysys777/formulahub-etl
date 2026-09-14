@@ -53,10 +53,53 @@ jobs:
           npm ci
           npm run build
 
+  desktop-shell:
+    name: desktop shell lint (Electron)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install and lint desktop shell
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build:check
+
+      # Optional headless API lifecycle check (no Electron GUI / no Mac .dmg)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Smoke API spawn/stop from desktop manager
+        run: |
+          python3 -m pip install -U pip
+          python3 -m pip install -e packages/runner -e packages/api
+          python3 -m pip install openpyxl pandas 'paramiko>=3.0' 'psycopg[binary]>=3.1' 'cryptography>=42.0'
+          python3 scripts/seed_demo.py
+          cd apps/web && npm ci && npm run build
+          cd ../desktop && npm run smoke:api
+        env:
+          FORMULAETL_DEMO: "1"
+          FORMULAETL_WORK_DIR: ${{ github.workspace }}
+
+# Mac .app / .dmg packaging requires a macOS runner + (for distribution) Apple
+# signing/notarization secrets. Do NOT claim Linux CI produces a signed Mac app.
+# Founder / optional job sketch:
+#   runs-on: macos-14
+#   working-directory: apps/desktop
+#   run: npm ci && npm run dist:mac
+# Artifacts: apps/desktop/release/*.dmg — unsigned unless CSC_* secrets are set.
+# See docs/studio/DESKTOP_SHELL.md
+
 # Live connector E2E (AWS/SFTP/Snowflake/Kafka/Databricks/Postgres) is intentionally
 # NOT run here. Design partners prove live paths manually — see
 # docs/design-partner/LIVE_WEDGE.md and PRODUCTION_CHECKLIST.md
 # Harness: scripts/live_wedge_e2e.py / tests/live (marker: live)
 # LOCAL/DEMO scale benches: scripts/local_wedge_bench.py / tests/bench (marker: bench)
 # Opt-in: RUN_BENCH=1 make bench — never claim LIVE_CLOUD from these numbers
-

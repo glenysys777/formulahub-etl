@@ -33,6 +33,7 @@ FormulaHub ETL is a drag-and-drop pipeline designer. Underneath, it generates an
 
 ```
 apps/web          React + Vite + React Flow (visual DAG)
+apps/desktop      Electron Studio shell (local API + WebView)
 packages/api      FastAPI — CRUD, run, logs, AI builder, schema discover, scheduler
 packages/runner   Python component SDK + sequential DAG runner
 demos/            Ready-to-run pipeline demos (incl. Kafka → Databricks)
@@ -92,6 +93,26 @@ Or with Docker:
 make docker-up    # API :18765  ·  UI :18766
 ```
 
+### Desktop Studio (Mac / local)
+
+Prefer a native window over Docker+browser:
+
+```bash
+make install && make seed && make build
+make desktop      # Electron shell → starts API if needed → opens Studio
+```
+
+**Build on Mac → open Studio.app** (must run on macOS; Linux CI does not emit a signed `.dmg`):
+
+```bash
+cd apps/desktop && npm install && npm run dist:mac
+open release/mac*/FormulaHub\ Studio.app
+```
+
+Double-click flow: app starts the local API when needed, loads Studio, shows `work_dir` in the status bar; quit stops an API the shell started. Details: [docs/studio/DESKTOP_SHELL.md](./docs/studio/DESKTOP_SHELL.md), [apps/desktop/README.md](./apps/desktop/README.md).
+
+Mac handoff zip (Docker + sources): `make mac-pack` → `data/out/mac-pack/FormulaHub-ETL-Mac.zip`.
+
 ### Hosted UI vs API
 
 The production UI at [formulahub-etl.vercel.app](https://formulahub-etl.vercel.app) is the static Vite app (`apps/web`). It does **not** run FastAPI or the Python runner on Vercel. Point a browser at the live UI for the canvas; run pipelines with `make api` / `make docker-up` (`FORMULAETL_DEMO=1`). See [docs/deploy.md](./docs/deploy.md) for Vercel project details and API hosting next steps (Railway / Fly / Render / Docker). Optional later: `CNAME etl.formulahub.io` → Vercel.
@@ -147,9 +168,11 @@ formulahub-etl/
     api/             # FastAPI formulaetl_api
   apps/
     web/             # Vite React app
+    desktop/         # Electron Studio shell
   demos/
   fixtures/
   docs/sales/        # GTM one-pager, pitch, use cases
+  docs/studio/       # Finished product + desktop shell
   tests/
 ```
 

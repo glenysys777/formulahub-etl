@@ -1,4 +1,4 @@
-.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql api worker web build docker-up docker-down lint
+.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql api worker web build docker-up docker-down lint desktop desktop-install desktop-lint mac-pack
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -8,6 +8,7 @@ install:
 	python3 -m pip install -e packages/runner -e packages/api
 	python3 -m pip install pytest pytest-asyncio httpx openpyxl pandas 'paramiko>=3.0' 'psycopg[binary]>=3.1' 'cryptography>=42.0'
 	cd apps/web && npm install
+	cd apps/desktop && npm install
 
 seed:
 	python3 scripts/seed_demo.py
@@ -100,11 +101,26 @@ web:
 build:
 	cd apps/web && npm run build
 
+# Desktop Studio shell (Electron). Starts local API if needed, opens Studio WebView.
+# Mac .app / .dmg: on macOS run `cd apps/desktop && npm run dist:mac` — see docs/studio/DESKTOP_SHELL.md
+desktop-install:
+	cd apps/desktop && npm install
+
+desktop-lint:
+	cd apps/desktop && npm run build:check
+
+desktop: build
+	cd apps/desktop && npm install && npm start
+
 docker-up: seed
 	docker compose up --build
 
 docker-down:
 	docker compose down
+
+# Zip FormulaHub-ETL-Mac for Mac handoff (Docker + desktop sources). Not a signed .app.
+mac-pack:
+	bash scripts/mac_pack.sh
 
 lint:
 	python3 -m compileall packages/runner packages/api scripts
