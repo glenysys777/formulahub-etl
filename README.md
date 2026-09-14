@@ -161,7 +161,8 @@ formulahub-etl/
 - Spark / Polars backends for larger volumes
 - More warehouse connectors (BigQuery, Databricks, real Snowflake/S3 by default)
 - Collaborative editing & pipeline versioning
-- Enterprise SSO / RBAC / lineage / secrets
+- Enterprise SSO / RBAC / lineage / cloud vault backends
+- Connections + local secret refs: see [docs/CONNECTIONS.md](./docs/CONNECTIONS.md) (Phase F)
 - Managed cloud (Apache 2.0 core remains free)
 
 ---

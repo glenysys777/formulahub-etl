@@ -20,5 +20,6 @@ dist/
 .DS_Store
 .env
 .coverage
+data/.formulaetl_secrets_key
 htmlcov/
 apps/web/dist/

@@ -18,6 +18,7 @@ from formulaetl.sdk.capabilities import ARTIFACT_SOURCE
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.data import ArtifactHandle
 from formulaetl.sdk.io_util import redact_secrets, retry_call
+from formulaetl.sdk.connections import connection_id_param
 from formulaetl.sdk.registry import register
 
 
@@ -190,6 +191,7 @@ class SFTPSource(BaseComponent):
         },
     }
     parameters = [
+        connection_id_param(),
         {
             "key": "host",
             "label": "Host",

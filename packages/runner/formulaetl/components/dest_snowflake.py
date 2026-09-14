@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.connections import connection_id_param
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -35,6 +36,7 @@ class SnowflakeDestination(BaseComponent):
         },
     }
     parameters = [
+        connection_id_param(),
         {"key": "database", "label": "Database", "type": "string", "required": False, "help": "Snowflake database"},
         {"key": "schema", "label": "Schema", "type": "string", "required": False, "default": "PUBLIC", "help": "Snowflake schema"},
         {"key": "table", "label": "Table", "type": "string", "required": False, "default": "FORMULAETL_LOAD", "help": "Target table name"},

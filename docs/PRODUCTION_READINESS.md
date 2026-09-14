@@ -20,7 +20,7 @@
 
 **Rule:** Demo fixtures, local CSV sidecars, and Jobs-API-shaped JSON files are **DEMO**. They are not production Snowflake, Kafka, S3, or Databricks.
 
-**Overall product today: DEMO** (designer + fixture connectors). Control-plane bookkeeping (async runs, SQLite history, versions) is **ALPHA**. A few transforms and local file I/O are **ALPHA** for laptop-sized jobs. Nothing is **PRODUCTION**.
+**Overall product today: DEMO** (designer + fixture connectors). Control-plane bookkeeping (async runs, SQLite history, versions) is **ALPHA**. Connections + local SecretProvider + optional API key are **ALPHA** (Community / design-partner path — not enterprise vault). A few transforms and local file I/O are **ALPHA** for laptop-sized jobs. Nothing is **PRODUCTION**.
 
 ---
 
@@ -57,20 +57,21 @@ Single API process by default (embedded worker). Restart no longer wipes run his
 
 - **No** global `_runner_lock` — concurrent claimed jobs may run in parallel.
 - `POST /api/pipelines/{id}/run` returns **202** with `status=queued` + `pipeline_version_id`; worker executes async.
-- CORS `allow_origins=["*"]`, **no authentication**, no API keys.
+- CORS `allow_origins=["*"]`.
+- Optional **`FORMULAETL_API_KEY`**: when set, require `X-API-Key` or `Authorization: Bearer` (Community stays open when unset). `/health` reports `auth: none|api_key`.
 - Embedded worker thread by default (`FORMULAETL_EMBEDDED_WORKER=1`); standalone: `make worker`.
 
-### Secrets in pipeline JSON
+### Secrets and Connections (Phase F)
 
-Yes. Node `config` is stored in the version snapshot JSON (and previously in `data/pipelines/*.json`).
+- **Connections** CRUD: `sftp`, `s3`, `snowflake`, `postgres`, `http` — see `docs/CONNECTIONS.md`.
+- **SecretProvider**: env refs (`env:NAME`, `${NAME}`) and Fernet-encrypted local SQLite store (`secret:<id>`).
+- Nodes may set `connection_id`; runtime merges credentials in memory. Pipeline JSON should hold **refs**, not passwords.
+- `GET` responses **mask** secret fields; refs are returned safely.
+- Inline demo hosts (`host: "demo"`, empty passwords) still work under `FORMULAETL_DEMO=1` without a connection.
+- AI builder strips secret literals; never send decrypted secrets to LLMs.
+- **Not** HashiCorp Vault / cloud KMS / SSO — still a design-partner gap for ENTERPRISE.
 
-- UI marks `password` / `token` / `passphrase` as `type: secret` (masked input only).
-- Values are still returned by `GET /api/pipelines/{id}`.
-- No `${ENV}` interpolation, no vault, no secret refs beyond PGP key/passphrase refs.
-- Demo PGP node includes `"passphrase": ""` and a **path to a demo private key** in-repo (`fixtures/keys/`).
-- Live SFTP/Postgres/Snowflake/Databricks would put passwords/PATs in the same JSON.
-
-Unauthenticated API + secrets-in-JSON remains a **hard production blocker**.
+Unauthenticated Community (no API key) + any leftover inline secrets remain a **partner risk**; set `FORMULAETL_API_KEY` and migrate nodes to `connection_id` before live credentials.
 
 ---
 
@@ -158,8 +159,8 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 | Databricks Job trigger | DEMO | DESIGN PARTNER (orchestration) | No | Default yes | Sidecar SUCCESS ≠ cluster job | Live Jobs API with partner token |
 | AI pipeline builder | DEMO | ALPHA | No | Heuristic graphs | LLM can emit garbage types; auto-save | Keep offline heuristic; don’t sell as prod |
 | Schema discover | ALPHA | DESIGN PARTNER | No | Demo files | Same demo/live split as sources | Cache schemas; no live in CI |
-| Secrets / vault | DEMO (none) | PRODUCTION | No | N/A | Secrets in JSON + public GET | Env/vault refs; redact API |
-| Auth / SSO / RBAC | DEMO (none) | ENTERPRISE / PRODUCTION | No | N/A | Open API | Token auth before any customer data |
+| Secrets / vault | ALPHA (env + local encrypted + connections) | PRODUCTION | No | Prefer refs | Not enterprise vault; migrate inline | Prefer `connection_id`; see CONNECTIONS.md |
+| Auth / SSO / RBAC | ALPHA (optional API key) / ABSENT SSO | ENTERPRISE / PRODUCTION | No | Open when unset | Set key before live data | Token auth before any customer data |
 | Multi-instance HA | DEMO (absent) | ENTERPRISE | No | Single process | Duplicate scheduled runs | Control plane vs workers (see architecture note) |
 | Hosted production runtime | DEMO | PRODUCTION | No | Vercel UI only | README “K8s” is roadmap, not code | Docker API with DEMO=0 only after auth |
 | CI/CD gate | DEMO (no GHA) | PRODUCTION | No | Local pytest | `main` can break unnoticed | Add pytest + `npm run build` on PR |
@@ -167,15 +168,15 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 
 ---
 
-## Bottlenecks for Phase B (review this list; do not implement here)
+## Bottlenecks for Customer #1 (honest remaining)
 
-1. **Memory data path** — `list[dict]` + whole-file `bytes` cannot be Customer #1 production.
-2. **No auth, secrets in pipeline JSON, CORS \*** — cannot put real credentials on this API.
-3. **In-memory run history + global sync lock** — not an execution service.
-4. **In-process cron** — not a scheduler product.
-5. **Warehouse/stream connectors are fixtures** — Snowflake/Kafka/Databricks/S3/SFTP/Postgres live paths are **unproven**.
+1. **Memory data path** — `list[dict]` + whole-file hops still bound laptop-sized jobs.
+2. **Live connectors unproven in CI** — S3/SFTP/Snowflake/Kafka/Databricks/Postgres live paths need partner evidence.
+3. **API key is optional** — Community defaults open; partners must set `FORMULAETL_API_KEY`.
+4. **Local secret store ≠ enterprise vault** — migrate nodes to `connection_id`; see `docs/CONNECTIONS.md`.
+5. **In-process cron** — not a scheduler product.
 6. **No CI on GitHub** — production trust starts with a gate that matches `make test` + `npm run build`.
-7. **Control plane vs data plane are the same process** — see `docs/architecture/CONTROL_DATA_PLANE.md` (north star only).
+7. **Control plane vs data plane** — queue exists; prefer private worker next to customer data (`docs/architecture/CONTROL_DATA_PLANE.md`).
 
 ---
 
@@ -185,4 +186,4 @@ Snowflake destination SQL interpolates table/column names. Live insert is not wa
 - “Streaming ETL” (Kafka source stops after `max_messages`).
 - “Spark engine” (Databricks node triggers a job API).
 - “Deploy on Kubernetes” as a shipped operator (Docker Compose exists; no k8s manifests in this audit).
-- “Enterprise scheduler / SSO / secrets.”
+- “Enterprise scheduler / SSO / secrets vault.”
