@@ -125,32 +125,32 @@ class LookupJoin(BaseComponent):
     parameters = [
         {
             "key": "left_keys",
-            "label": "Primary (left) join keys",
+            "label": "Main (primary) join keys",
             "type": "string_list",
             "required": True,
-            "help": "Column(s) on the primary input (wire to the left/in handle). Example: customer_id",
+            "help": "Column(s) on the Main input (upper handle). Example: customer_id",
         },
         {
             "key": "right_keys",
-            "label": "Lookup (right) join keys",
+            "label": "Lookup join keys",
             "type": "string_list",
             "required": True,
-            "help": "Matching column(s) on the lookup input (wire to the right handle, or set Lookup file)",
+            "help": "Matching column(s) on the Lookup input (lower handle), or Lookup file",
         },
         {
             "key": "lookup_path",
             "label": "Lookup file",
             "type": "string",
             "required": False,
-            "help": "Optional CSV/JSON lookup when not wiring a second source into the right handle",
+            "help": "Optional CSV/JSON lookup when not wiring a second source into the Lookup handle",
         },
         {
             "key": "prefix",
-            "label": "Right column prefix",
+            "label": "Lookup column prefix",
             "type": "string",
             "required": False,
             "default": "",
-            "help": "Optional prefix for columns taken from the lookup row",
+            "help": "Optional prefix for columns taken from the Lookup row",
         },
         {
             "key": "how",
@@ -159,7 +159,7 @@ class LookupJoin(BaseComponent):
             "required": False,
             "default": "left",
             "options": ["left", "inner", "right", "full"],
-            "help": "left = keep unmatched primary; inner = matches only; right = keep unmatched lookup; full = keep both unmatched sides",
+            "help": "left = keep unmatched Main; inner = matches only; right = keep unmatched Lookup; full = keep both unmatched sides",
         },
         {
             "key": "match",
@@ -168,7 +168,7 @@ class LookupJoin(BaseComponent):
             "required": False,
             "default": "all",
             "options": ["all", "first"],
-            "help": "all = one output row per matching lookup row (one-to-many); first = only the first hit per key",
+            "help": "all = one output row per matching Lookup row (one-to-many); first = only the first hit per key",
         },
     ]
 

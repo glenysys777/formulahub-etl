@@ -19,6 +19,7 @@ import {
   api,
   API_BASE,
   type ComponentInfo,
+  type HealthInfo,
   type Pipeline,
   type PipelineEdge,
   type PipelineNode,
@@ -28,11 +29,13 @@ import {
 import { EtlNode, ComponentGlyph, categoryForType, CAT_COLORS, isMapperType, isLookupType, type EtlNodeData, type RunVisual } from "./EtlNode";
 import { NodeInspector, missingRequiredKeys } from "./NodeInspector";
 import { SchemaMapper } from "./SchemaMapper";
+import { QuickAddPalette } from "./QuickAddPalette";
 import { StudioNodeActionsContext, type StudioNodeActions } from "./studioActions";
 
 const DEMO_ID = "demo-api-kafka-databricks";
 const DEFAULT_PROMPT =
   "Read orders from a Kafka topic, map fields, and trigger a Databricks notebook job.";
+const SIDEBAR_COLLAPSE_KEY = "formulaetl.studio.sidebarCollapsed";
 
 const PALETTE_ORDER = [
   "kafka_source",
@@ -235,6 +238,7 @@ function AppCanvas() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiOk, setApiOk] = useState(false);
+  const [health, setHealth] = useState<HealthInfo | null>(null);
   const [components, setComponents] = useState<ComponentInfo[]>([]);
   const [mapperOpen, setMapperOpen] = useState(false);
   const [inspectorFocus, setInspectorFocus] = useState<"inspector" | "join" | null>(null);
@@ -245,6 +249,16 @@ function AppCanvas() {
   const [scheduleTz, setScheduleTz] = useState("UTC");
   const [scheduleInfo, setScheduleInfo] = useState<string | null>(null);
   const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddQuery, setQuickAddQuery] = useState("");
+  const [canvasFocused, setCanvasFocused] = useState(false);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -252,6 +266,9 @@ function AppCanvas() {
   const selectedIdRef = useRef(selectedId);
   const mapperOpenRef = useRef(mapperOpen);
   const keepMapperOpenRef = useRef(false);
+  const quickAddOpenRef = useRef(quickAddOpen);
+  const canvasFocusedRef = useRef(canvasFocused);
+  const pointerFlowPos = useRef<{ x: number; y: number } | null>(null);
   const { screenToFlowPosition } = useReactFlow();
 
   nodesRef.current = nodes;
@@ -259,6 +276,20 @@ function AppCanvas() {
   pipelineRef.current = pipeline;
   selectedIdRef.current = selectedId;
   mapperOpenRef.current = mapperOpen;
+  quickAddOpenRef.current = quickAddOpen;
+  canvasFocusedRef.current = canvasFocused;
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSE_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   const componentByType = useMemo(() => {
     const map: Record<string, ComponentInfo> = {};
@@ -394,8 +425,9 @@ function AppCanvas() {
   useEffect(() => {
     api
       .health()
-      .then(async () => {
+      .then(async (h) => {
         setApiOk(true);
+        setHealth(h);
         try {
           const comps = await api.listComponents();
           setComponents(comps);
@@ -406,6 +438,7 @@ function AppCanvas() {
       })
       .catch(() => {
         setApiOk(false);
+        setHealth(null);
         setError(`API unreachable at ${API_BASE}. Start with: make api`);
       });
   }, [loadDemo]);
@@ -455,6 +488,16 @@ function AppCanvas() {
         return;
       }
       setMapperOpen(false);
+      // Inspector lives in the right sidebar — expand if collapsed
+      setSidebarCollapsed((prev) => {
+        if (!prev) return prev;
+        try {
+          localStorage.setItem(SIDEBAR_COLLAPSE_KEY, "0");
+        } catch {
+          /* ignore */
+        }
+        return false;
+      });
       if (isLookupType(componentType)) {
         setInspectorFocus("join");
         scrollInspectorIntoView(true);
@@ -476,6 +519,7 @@ function AppCanvas() {
     selectedIdRef.current = n.id;
     setSelectedId(n.id);
     setDiscoverMsg(null);
+    setCanvasFocused(true);
     if (keepMapperOpenRef.current) {
       keepMapperOpenRef.current = false;
       return;
@@ -502,29 +546,22 @@ function AppCanvas() {
     setDiscoverMsg(null);
     setInspectorFocus(null);
     setMapperOpen(false);
+    setCanvasFocused(true);
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (mapperOpenRef.current) return;
-      const id = selectedIdRef.current;
-      if (!id) return;
-      const node = nodesRef.current.find((n) => n.id === id);
-      if (!node) return;
-      const d = node.data as EtlNodeData;
-      if (!isMapperType(d.componentType)) return;
-      const el = e.target as HTMLElement | null;
-      const tag = el?.tagName;
-      const editing =
-        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean(el?.isContentEditable);
-      if (e.key !== "Enter") return;
-      if (editing && !e.metaKey && !e.ctrlKey) return;
-      e.preventDefault();
-      openMapper(id);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [openMapper]);
+  const placePosition = useCallback(() => {
+    if (pointerFlowPos.current) return { ...pointerFlowPos.current };
+    const el = document.querySelector(".react-flow") as HTMLElement | null;
+    const rect = el?.getBoundingClientRect();
+    const cx = (rect?.left ?? 0) + (el?.clientWidth ?? 800) / 2;
+    const cy = (rect?.top ?? 0) + (el?.clientHeight ?? 500) / 2;
+    return screenToFlowPosition({ x: cx, y: cy });
+  }, [screenToFlowPosition]);
+
+  const closeQuickAdd = useCallback(() => {
+    setQuickAddOpen(false);
+    setQuickAddQuery("");
+  }, []);
 
   const schedulePersist = useCallback(() => {
     if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -606,6 +643,70 @@ function AppCanvas() {
     },
     [ensurePipeline, setNodes, schedulePersist],
   );
+
+  const onQuickAddPick = useCallback(
+    async (comp: ComponentInfo) => {
+      const pos = placePosition();
+      closeQuickAdd();
+      await addComponentNode(comp, pos);
+    },
+    [placePosition, closeQuickAdd, addComponentNode],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (mapperOpenRef.current) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      const editing =
+        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean(el?.isContentEditable);
+
+      // Sidebar collapse: ] or Ctrl/Cmd+\
+      if (
+        (e.key === "]" && !editing && !e.metaKey && !e.ctrlKey && !e.altKey) ||
+        (e.key === "\\" && (e.metaKey || e.ctrlKey))
+      ) {
+        if (!quickAddOpenRef.current) {
+          e.preventDefault();
+          toggleSidebar();
+          return;
+        }
+      }
+
+      if (quickAddOpenRef.current) return;
+
+      const id = selectedIdRef.current;
+      if (id && e.key === "Enter") {
+        const node = nodesRef.current.find((n) => n.id === id);
+        if (node) {
+          const d = node.data as EtlNodeData;
+          if (isMapperType(d.componentType)) {
+            if (editing && !e.metaKey && !e.ctrlKey) return;
+            e.preventDefault();
+            openMapper(id);
+            return;
+          }
+        }
+      }
+
+      // Type-to-place when canvas focused and not editing a field
+      if (editing) return;
+      if (!canvasFocusedRef.current && document.activeElement?.closest?.(".react-flow") == null) {
+        // Still allow if focus is on body/app after pane click
+        if (document.activeElement !== document.body && !document.activeElement?.classList?.contains("react-flow__pane")) {
+          return;
+        }
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.length !== 1) return;
+      if (!/[A-Za-z0-9_\- ]/.test(e.key)) return;
+      e.preventDefault();
+      setQuickAddQuery(e.key === " " ? "" : e.key);
+      setQuickAddOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openMapper, toggleSidebar]);
 
   const onPaletteDragStart = (event: DragEvent, comp: ComponentInfo) => {
     event.dataTransfer.setData(DND_MIME, comp.type);
@@ -851,11 +952,11 @@ function AppCanvas() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="main">
+      <div className={`main${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
         <aside className="palette" data-testid="component-palette" aria-label="Component palette">
           <h3>Components</h3>
           <p className="palette-hint">
-            Drag onto the canvas or click to add. Primary non-AI build path.
+            Drag, click, or type on the canvas to place. Primary non-AI build path.
           </p>
           <div className="palette-list">
             {paletteGroups.map((group) => (
@@ -897,7 +998,8 @@ function AppCanvas() {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Describe your pipeline in English…"
-              rows={2}
+              rows={1}
+              onFocus={() => setCanvasFocused(false)}
             />
             <button
               type="button"
@@ -909,6 +1011,17 @@ function AppCanvas() {
               AI Build
             </button>
           </div>
+          <button
+            type="button"
+            className={`sidebar-toggle${sidebarCollapsed ? " is-collapsed" : ""}`}
+            data-testid="sidebar-toggle"
+            title={sidebarCollapsed ? "Expand inspector (])" : "Collapse inspector (])"}
+            aria-label={sidebarCollapsed ? "Expand right sidebar" : "Collapse right sidebar"}
+            aria-pressed={sidebarCollapsed}
+            onClick={toggleSidebar}
+          >
+            {sidebarCollapsed ? "‹" : "›"}
+          </button>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -926,11 +1039,18 @@ function AppCanvas() {
             onNodeClick={onNodeClick}
             onNodeDoubleClick={onNodeDoubleClick}
             onPaneClick={onPaneClick}
+            onPaneMouseMove={(e) => {
+              pointerFlowPos.current = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            }}
+            onInit={() => setCanvasFocused(true)}
             proOptions={{ hideAttribution: true }}
+            className={canvasFocused ? "canvas-focused" : undefined}
           >
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#d2d2d7" />
-            <Controls />
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#d2d2d7" />
+            <Controls showInteractive={false} />
             <MiniMap
+              pannable
+              zoomable
               nodeColor={(n) => {
                 const t = (n.data as { componentType?: string })?.componentType || "";
                 if (t.includes("pgp")) return "#9333ea";
@@ -944,12 +1064,21 @@ function AppCanvas() {
                 return "#f59e0b";
               }}
               maskColor="rgba(245,245,247,0.78)"
-              style={{ background: "#ffffff", border: "1px solid #d2d2d7" }}
+              style={{ background: "#ffffff", border: "1px solid #d2d2d7", width: 120, height: 80 }}
             />
           </ReactFlow>
+          {canvasFocused && !quickAddOpen && !mapperOpen && (
+            <div className="canvas-type-hint" data-testid="canvas-type-hint">
+              Type to place · ] collapses inspector
+            </div>
+          )}
         </div>
 
-        <aside className="sidebar">
+        <aside
+          className={`sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}
+          data-testid="right-sidebar"
+          aria-hidden={sidebarCollapsed}
+        >
           <div className="sidebar-section">
             <h3>Pipeline</h3>
             {pipeline ? (
@@ -1188,15 +1317,17 @@ function AppCanvas() {
                     </button>
                     <p className="mapper-hint">
                       {selectedData.componentType === "tmap"
-                        ? "Double-click the node or press Enter — Input · Variables · Output. To merge two sources first, use Lookup Join."
-                        : "Double-click the node or press Enter — map Input columns to Output. For Variables and expressions, use Field Mapper."}
+                        ? "Double-click or Enter — Main input · Variables · Output. To merge two sources first, use Lookup Join (Main + Lookup)."
+                        : "Double-click or Enter — map Main input columns to Output. For Variables and expressions, use Field Mapper."}
                     </p>
                   </div>
                 )}
                 {isLookupType(selectedData.componentType) && (
                   <div className="inspector-actions">
                     <p className="mapper-hint" data-testid="lookup-inspector-hint">
-                      Double-click the node to jump to join type, match, and keys below.
+                      Wire <strong>Main</strong> (upper) for the primary stream and{" "}
+                      <strong>Lookup</strong> (lower) for enrichment — or set Lookup file. Double-click
+                      jumps to join type, match, and keys.
                     </p>
                   </div>
                 )}
@@ -1279,9 +1410,32 @@ function AppCanvas() {
         />
       )}
 
-      <footer className="footer">
-        <span>FormulaHub ETL · Apache-2.0 · demo mode {apiOk ? "on" : "api offline"}</span>
-        <span>{API_BASE}</span>
+      <QuickAddPalette
+        open={quickAddOpen}
+        query={quickAddQuery}
+        onQueryChange={setQuickAddQuery}
+        components={paletteItems}
+        onPick={(c) => void onQuickAddPick(c)}
+        onClose={closeQuickAdd}
+      />
+
+      <footer className="footer status-bar" data-testid="status-bar">
+        <span className="status-left">
+          FormulaHub ETL · Apache-2.0 · demo {apiOk ? (health?.demo_mode ? "on" : "off") : "api offline"}
+          {health?.readiness_level ? ` · ${health.readiness_level}` : ""}
+        </span>
+        <span
+          className="status-workdir"
+          data-testid="status-workdir"
+          title="Local runner workspace on this machine"
+        >
+          {health?.work_dir
+            ? `workspace on this machine · ${health.work_dir}`
+            : apiOk
+              ? "workspace on this machine · …"
+              : API_BASE}
+        </span>
+        <span className="status-api">{API_BASE}</span>
       </footer>
     </div>
     </StudioNodeActionsContext.Provider>

@@ -148,8 +148,18 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type HealthInfo = {
+  status: string;
+  demo_mode: boolean;
+  version?: string;
+  work_dir?: string;
+  db_path?: string;
+  readiness_level?: string;
+  auth?: string;
+};
+
 export const api = {
-  health: () => req<{ status: string; demo_mode: boolean }>("/health"),
+  health: () => req<HealthInfo>("/health"),
   listComponents: () => req<ComponentInfo[]>("/api/components"),
   listPipelines: () => req<Pipeline[]>("/api/pipelines"),
   getPipeline: (id: string) => req<Pipeline>(`/api/pipelines/${id}`),
