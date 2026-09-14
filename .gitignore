@@ -3,10 +3,12 @@ data/out/
 data/archive/
 data/rejects/
 data/tmp/
+data/bench/
 data/pipelines/
 data/schedules/
 data/*.db
 data/*.db-*
+data/s3/demo/wedge_bench_*
 *.pyc
 __pycache__/
 .pytest_cache/
