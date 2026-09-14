@@ -244,8 +244,20 @@ function summary(type: string, config: Record<string, unknown>): string {
   }
   if (type === "tmap") {
     const m = config.mappings as string[] | string | undefined;
+    const v = config.variables as string[] | string | undefined | object[];
     const n = Array.isArray(m) ? m.length : m ? String(m).split("\n").filter(Boolean).length : 0;
+    const vn = Array.isArray(v)
+      ? v.length
+      : v
+        ? String(v).split("\n").filter(Boolean).length
+        : 0;
+    if (n && vn) return `${vn} vars · ${n} outputs`;
     return n ? `${n} field maps` : "map fields";
+  }
+  if (type === "lookup_join") {
+    const how = String(config.how || "left");
+    const match = String(config.match || "all");
+    return `${how} join · match ${match}`;
   }
   if (type === "sort") {
     const k = config.keys as string[] | string | undefined;
@@ -260,7 +272,11 @@ function summary(type: string, config: Record<string, unknown>): string {
     return `group ${gs} · ${an} aggs`;
   }
   if (type === "python_row") return `${config.mode || "row"} · Python`;
-  if (type === "lookup_join") return String(config.how || "left") + " join";
+  if (type === "lookup_join") {
+    const how = String(config.how || "left");
+    const match = String(config.match || "all");
+    return `${how} join · match ${match}`;
+  }
   if (type === "pgp_decrypt") return String(config.private_key_path || "private key");
   if (type === "pgp_encrypt") return String(config.public_key_path || "public key");
   if (type === "schema_validate") {
@@ -311,11 +327,18 @@ export function EtlNode({ data, selected }: NodeProps) {
   const runVisual = d.runVisual || "idle";
   const title = friendlyLabel(d.componentType, d.label);
   const isMapper = d.componentType === "tmap" || d.componentType === "column_map";
+  const isLookup = d.componentType === "lookup_join";
 
   return (
     <div
       className={`etl-node cat-${cat} ${selected ? "selected" : ""} run-${runVisual}${isMapper ? " is-mapper" : ""}`}
-      title={isMapper ? "Map source columns to targets — double-click to open" : undefined}
+      title={
+        isMapper
+          ? "Column logic + Variables — double-click to open Field Mapper"
+          : isLookup
+            ? "Merge two sources: primary → left/in, lookup → right"
+            : undefined
+      }
     >
       {runVisual === "running" && <span className="etl-progress-ring" aria-hidden />}
       {runVisual === "success" && (
@@ -335,7 +358,26 @@ export function EtlNode({ data, selected }: NodeProps) {
           ↺
         </span>
       )}
-      <Handle type="target" position={Position.Left} style={{ background: "#aeaeb2" }} />
+      {isLookup ? (
+        <>
+          <Handle
+            type="target"
+            id="in"
+            position={Position.Left}
+            style={{ background: "#aeaeb2", top: "32%" }}
+            title="Primary (left) input"
+          />
+          <Handle
+            type="target"
+            id="right"
+            position={Position.Left}
+            style={{ background: "#ff9f0a", top: "68%" }}
+            title="Lookup (right) input"
+          />
+        </>
+      ) : (
+        <Handle type="target" position={Position.Left} style={{ background: "#aeaeb2" }} />
+      )}
       <div className="etl-node-header">
         <span className="etl-node-icon" title={d.componentType}>
           <ComponentGlyph type={d.componentType} />

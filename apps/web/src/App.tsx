@@ -901,7 +901,10 @@ function AppCanvas() {
                     >
                       Open Field Mapper
                     </button>
-                    <p className="mapper-hint">Double-click the node on the canvas, or use this button.</p>
+                    <p className="mapper-hint">
+                      Double-click the node — large Input · Variables · Output mapper. For merging two
+                      sources first, use Lookup Join.
+                    </p>
                   </div>
                 )}
                 {(selectedData.componentType.endsWith("_source") ||

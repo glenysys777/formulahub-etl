@@ -19,10 +19,10 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 | **DB / Postgres → file** | **Postgres Source → File / Postgres Destination** |
 | JSON array → rows | JSON Parser (+ optional path / json_path) |
 | Dedupe on keys | Dedupe (keep first/last) |
-| Lookup / light join | Lookup Join (left/inner on keys; file or second input) |
+| Lookup / join | Lookup Join (left/inner/right/full; match all/first; file or second input on right handle) |
 | Local DB pattern | SQLite Source / SQLite Destination (`data/demo.db`) |
 | **Sort rows** | **Sort** (`col:asc` / `col:desc`) |
-| **Expression field mapping** | **Field Mapper** — `out=expr`, filter, drop_unmapped (MVP visual mapper; not a full multi-output IDE) |
+| **Expression field mapping** | **Field Mapper** — Input · Variables · Output; `out=expr`, filter, drop_unmapped |
 | **Aggregate (lite)** | **Aggregate** — group_by + sum/count/min/max/avg |
 | **Custom per-row logic** | **Python Row** — sandboxed Python |
 | **PGP encrypt + decrypt** | `pgp_encrypt` / `pgp_decrypt` |
@@ -67,5 +67,4 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 
 > **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default DEMO=1 use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
 
-
-> “We match the visual ETL jobs companies run now: **API read, Kafka read, S3 → Databricks job trigger, Field Mapper, schedule in one place**. AI Build is a shortcut — the palette and params stand alone. Demo mode mocks Kafka/Databricks so you can run without credentials. Community includes a self-hosted scheduler; HA cloud scheduling is a later Enterprise lock. We’re not claiming an embedded Spark engine or fabricated price lists.”
+> “We match the visual ETL jobs companies run now: **API read, Kafka read, S3 → Databricks job trigger, Field Mapper with Variables, Lookup Join (left/inner/right/full), schedule in one place**. AI Build is a shortcut — the palette and params stand alone. Demo mode mocks Kafka/Databricks/SFTP/DB so you can run without credentials. Community includes a self-hosted scheduler; HA cloud scheduling is a later Enterprise lock. We’re not claiming an embedded Spark engine or fabricated price lists.”

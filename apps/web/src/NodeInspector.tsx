@@ -162,6 +162,15 @@ export function NodeInspector({
 
   const typeLabel = friendlyTypeLabel(componentType, label, component?.display_name);
 
+  const tip =
+    componentType === "lookup_join"
+      ? "Merge two sources here: wire the primary stream to the left/in handle and the lookup stream to the right handle (or set Lookup file). Join keys below must match."
+      : componentType === "tmap"
+        ? "Field Mapper is column logic — Input columns, Variables (named expressions in the middle), and Output mappings. To merge two tables first, use Lookup Join."
+        : componentType === "column_map"
+          ? "Schema Map renames columns. For Variables and expressions, use Field Mapper."
+          : null;
+
   return (
     <div className="inspector">
       <div className="inspector-meta">
@@ -180,6 +189,12 @@ export function NodeInspector({
           </div>
         </div>
       </div>
+
+      {tip && (
+        <div className="inspector-tip" data-testid="inspector-tip">
+          {tip}
+        </div>
+      )}
 
       {missing.length > 0 && (
         <div className="inspector-warn" data-testid="missing-params">

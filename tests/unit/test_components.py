@@ -479,6 +479,108 @@ def test_tmap_expressions(work_dir: Path):
     assert result.metrics.rows_rejected == 1
 
 
+def test_tmap_variables_middle_layer(work_dir: Path):
+    """Variables evaluate before output mappings; outputs may reference var names."""
+    from formulaetl.components.tmap import TMap
+
+    rows = [
+        {"first": "ada", "last": "lovelace", "qty": 2, "price": 10},
+        {"first": "grace", "last": "hopper", "qty": 1, "price": 5},
+    ]
+    c = TMap({
+        "variables": [
+            "full_name=upper(first)+' '+last",
+            {"name": "line_total", "expr": "qty*price"},
+        ],
+        "mappings": [
+            "customer=full_name",
+            "amount=line_total",
+            "tag='ok'",
+        ],
+        "drop_unmapped": True,
+    })
+    result = c.run(ctx(work_dir), rows)
+    assert len(result.rows) == 2
+    assert result.rows[0]["customer"] == "ADA lovelace"
+    assert result.rows[0]["amount"] == 20
+    assert result.rows[1]["customer"] == "GRACE hopper"
+    assert result.rows[1]["amount"] == 5
+    assert "first" not in result.rows[0]
+    assert "full_name" not in result.rows[0]  # vars are not auto-emitted
+
+
+def test_lookup_join_right_full_and_match_first(work_dir: Path):
+    from formulaetl.components.lookup_join import LookupJoin
+
+    left = [
+        {"order_id": 1, "customer_id": "A"},
+        {"order_id": 2, "customer_id": "B"},
+        {"order_id": 3, "customer_id": "Z"},  # no match
+    ]
+    right = [
+        {"customer_id": "A", "segment": "smb", "rank": 1},
+        {"customer_id": "A", "segment": "smb", "rank": 2},  # second hit for A
+        {"customer_id": "B", "segment": "ent", "rank": 1},
+        {"customer_id": "C", "segment": "solo", "rank": 1},  # unmatched right
+    ]
+
+    # match=first → one row per left key
+    first = LookupJoin({
+        "left_keys": ["customer_id"],
+        "right_keys": ["customer_id"],
+        "how": "left",
+        "match": "first",
+    })
+    ctx_first = ctx(work_dir)
+    ctx_first.variables["_input_streams"] = {"right": right}
+    r_first = first.run(ctx_first, left)
+    assert r_first.metrics.rows_out == 3
+    assert r_first.rows[0]["segment"] == "smb"
+    assert r_first.rows[0].get("rank") == 1
+    assert "segment" not in r_first.rows[2] or r_first.rows[2].get("segment") is None
+
+    # match=all → one-to-many
+    many = LookupJoin({
+        "left_keys": ["customer_id"],
+        "right_keys": ["customer_id"],
+        "how": "inner",
+        "match": "all",
+    })
+    ctx_many = ctx(work_dir)
+    ctx_many.variables["_input_streams"] = {"right": right}
+    r_many = many.run(ctx_many, left)
+    assert r_many.metrics.rows_out == 3  # A×2 + B×1; Z dropped
+    assert sum(1 for row in r_many.rows if row["customer_id"] == "A") == 2
+
+    # right join keeps unmatched lookup (C) and drops unmatched left (Z)
+    right_join = LookupJoin({
+        "left_keys": ["customer_id"],
+        "right_keys": ["customer_id"],
+        "how": "right",
+        "match": "first",
+    })
+    ctx_right = ctx(work_dir)
+    ctx_right.variables["_input_streams"] = {"right": right}
+    r_right = right_join.run(ctx_right, left)
+    ids = {row.get("customer_id") for row in r_right.rows}
+    assert "C" in ids
+    assert "Z" not in ids
+    assert "A" in ids and "B" in ids
+
+    # full outer keeps both unmatched sides
+    full = LookupJoin({
+        "left_keys": ["customer_id"],
+        "right_keys": ["customer_id"],
+        "how": "full",
+        "match": "first",
+    })
+    ctx_full = ctx(work_dir)
+    ctx_full.variables["_input_streams"] = {"right": right}
+    r_full = full.run(ctx_full, left)
+    full_ids = {row.get("customer_id") for row in r_full.rows}
+    assert {"A", "B", "Z", "C"} <= full_ids
+
+
 def test_python_row_and_sandbox(work_dir: Path):
     from formulaetl.components.python_row import PythonRow
 
