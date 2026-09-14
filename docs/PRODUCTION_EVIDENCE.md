@@ -160,9 +160,30 @@ See `docs/PERFORMANCE.md` for knobs and what is still DEMO.
 
 ---
 
+---
+
+## K. Customer001 LOCAL wedge (filesystem + optional local Postgres)
+
+**Classification: LOCAL_PROVEN / LOCAL/DEMO — never LIVE_EXTERNAL.**
+
+Docs: [`CUSTOMER001_LOCAL_WEDGE.md`](./CUSTOMER001_LOCAL_WEDGE.md) · Matrix: [`CUSTOMER001_EVIDENCE_MATRIX.md`](./CUSTOMER001_EVIDENCE_MATRIX.md)  
+Harness: `scripts/customer001_local_wedge.py`  
+Path: **local encrypted drop → PGP → CSV → validate → Field Mapper → lookup → dedupe → rejects → Postgres → archive**  
+Reconciliation: **N=12 = R=2 + D=2 + L=8**.
+
+| ID | Claim | Status | Command | Result | Date |
+|----|-------|--------|---------|--------|------|
+| K0 | Fixture + pipeline + docs | PROVEN **LOCAL_ONLY** | paths under `fixtures/customer001_local_wedge/`, `demos/customer001-local-wedge/` | Pack present | 2026-09-14 |
+| K1 | DEMO reconcile always-on | PROVEN **LOCAL/DEMO** | `python3 scripts/customer001_local_wedge.py --mode demo` + pytest integration | N=R+D+L | 2026-09-14 |
+| K2 | Real local Postgres INSERT | PROVEN **LOCAL_PROVEN** when DSN up; else skip **LOCAL_ONLY** | `FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN=… --mode postgres` | Not LIVE_EXTERNAL | 2026-09-14 |
+| K3 | Snowflake bulk / Databricks / external SFTP·S3 | **GAP** | — | Document only — do not claim LIVE | 2026-09-14 |
+
+---
+
 ## Notes
 
 - Phase Perf adds streaming/lazy-chain + LOCAL/DEMO scale evidence; live connector E2E (section C / H) remains **UNPROVEN** until partner credentials exist.
+- Customer001 LOCAL wedge (§K) proves filesystem + optional local Postgres only — **not** LIVE_EXTERNAL.
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
-- Pytest **count** this PR (default markers): **167 passed**, 1 skipped, 6 deselected (`live` + `bench`). SHA `0067c52`.
+- Pytest **count** this PR (default markers): **190 passed**, 1 skipped, 6 deselected (`live` + `bench`). Includes Customer001 LOCAL wedge tests.

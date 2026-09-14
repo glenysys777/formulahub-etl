@@ -1,0 +1,171 @@
+{
+  "id": "customer001-local-wedge",
+  "name": "Customer001 LOCAL wedge: drop → PGP → CSV → validate → Field Mapper → lookup → dedupe → Postgres → archive",
+  "description": "Production-shaped LOCAL path using real local filesystem (+ optional real local Postgres). Classification LOCAL_PROVEN when FORMULAETL_DEMO=0 and Postgres DSN is set; otherwise DEMO postgres mirror. NEVER LIVE_EXTERNAL.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "src",
+      "type": "local_file_source",
+      "label": "Local encrypted drop",
+      "config": {
+        "path": "data/drop/customer001/orders.csv.pgp",
+        "format": "bytes"
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "pgp",
+      "type": "pgp_decrypt",
+      "label": "PGP Decrypt",
+      "config": {
+        "private_key_path": "fixtures/keys/demo_private.asc",
+        "passphrase": ""
+      },
+      "position": { "x": 240, "y": 180 }
+    },
+    {
+      "id": "parse",
+      "type": "csv_parser",
+      "label": "CSV Parse",
+      "config": {
+        "delimiter": ","
+      },
+      "position": { "x": 440, "y": 180 }
+    },
+    {
+      "id": "validate",
+      "type": "schema_validate",
+      "label": "Schema Validate",
+      "config": {
+        "columns": {
+          "order_id": "int",
+          "customer_id": "int",
+          "email": "email",
+          "quantity": "int",
+          "unit_price": "float",
+          "order_date": "date",
+          "status": "string"
+        },
+        "required_columns": [
+          "order_id",
+          "customer_id",
+          "email",
+          "quantity",
+          "unit_price",
+          "order_date",
+          "status"
+        ],
+        "strict": false
+      },
+      "position": { "x": 640, "y": 180 }
+    },
+    {
+      "id": "field_mapper",
+      "type": "tmap",
+      "label": "Field Mapper",
+      "config": {
+        "variables": [
+          "line_total=float(unit_price)*float(quantity)"
+        ],
+        "mappings": [
+          "order_id=order_id",
+          "customer_id=customer_id",
+          "email=lower(email)",
+          "quantity=int(quantity)",
+          "unit_price=float(unit_price)",
+          "line_total=line_total",
+          "order_date=order_date",
+          "status=lower(status)"
+        ],
+        "drop_unmapped": true
+      },
+      "position": { "x": 860, "y": 80 }
+    },
+    {
+      "id": "lookup",
+      "type": "lookup_join",
+      "label": "Lookup Customers",
+      "config": {
+        "lookup_path": "fixtures/customer001_local_wedge/customers_lookup.csv",
+        "left_keys": ["customer_id"],
+        "right_keys": ["customer_id"],
+        "how": "left",
+        "match": "first"
+      },
+      "position": { "x": 1080, "y": 80 }
+    },
+    {
+      "id": "dedupe",
+      "type": "dedupe",
+      "label": "Dedupe order_id",
+      "config": {
+        "keys": ["order_id"],
+        "keep": "first"
+      },
+      "position": { "x": 1300, "y": 80 }
+    },
+    {
+      "id": "metrics",
+      "type": "logger_metrics",
+      "label": "Metrics",
+      "config": {
+        "label": "pre-load",
+        "log_sample": 1
+      },
+      "position": { "x": 1500, "y": 80 }
+    },
+    {
+      "id": "dest",
+      "type": "postgres_destination",
+      "label": "Postgres (local or DEMO)",
+      "config": {
+        "host": "demo",
+        "table": "customer001_orders",
+        "if_exists": "replace",
+        "demo_output_dir": "data/out/customer001/postgres_demo"
+      },
+      "position": { "x": 1700, "y": 80 }
+    },
+    {
+      "id": "rejects",
+      "type": "local_file_destination",
+      "label": "Rejects File",
+      "config": {
+        "path": "data/rejects/customer001/orders_rejects.csv",
+        "format": "csv"
+      },
+      "position": { "x": 860, "y": 300 }
+    },
+    {
+      "id": "archive",
+      "type": "archive_files",
+      "label": "Archive Drop",
+      "config": {
+        "source": "data/drop/customer001/orders.csv.pgp",
+        "destination": "data/archive/customer001/",
+        "mode": "copy"
+      },
+      "position": { "x": 1700, "y": 300 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "src", "target": "pgp" },
+    { "id": "e2", "source": "pgp", "target": "parse" },
+    { "id": "e3", "source": "parse", "target": "validate" },
+    { "id": "e4", "source": "validate", "target": "field_mapper", "sourceHandle": "out" },
+    { "id": "e5", "source": "field_mapper", "target": "lookup" },
+    { "id": "e6", "source": "lookup", "target": "dedupe" },
+    { "id": "e7", "source": "dedupe", "target": "metrics" },
+    { "id": "e8", "source": "metrics", "target": "dest" },
+    { "id": "e9", "source": "validate", "target": "rejects", "sourceHandle": "rejects" },
+    { "id": "e10", "source": "dest", "target": "archive" }
+  ],
+  "metadata": {
+    "demo": true,
+    "classification": "LOCAL_ONLY",
+    "customer": "customer001",
+    "honesty": "LOCAL filesystem + optional LOCAL Postgres. Not LIVE_EXTERNAL (no SFTP/S3/Snowflake/Databricks).",
+    "expected_counts_path": "fixtures/customer001_local_wedge/expected_counts.json"
+  }
+}

@@ -267,6 +267,17 @@ def main() -> int:
     for d in (DATA_S3.parent, DATA_OUT, DATA_ARCHIVE, DATA_REJECTS, DATA_SFTP_MOCK, DATA_PG_DEMO):
         (d / ".gitkeep").touch()
 
+    # Refresh customer001 LOCAL wedge encrypted drop with the keys just generated
+    c001_csv = FIXTURES / "customer001_local_wedge" / "orders.csv"
+    if c001_csv.exists():
+        drop_dir = ROOT / "data" / "drop" / "customer001"
+        drop_dir.mkdir(parents=True, exist_ok=True)
+        drop_pgp = drop_dir / "orders.csv.pgp"
+        encrypt_file(c001_csv, pub, drop_pgp)
+        fixture_pgp = FIXTURES / "customer001_local_wedge" / "orders.csv.pgp"
+        fixture_pgp.write_bytes(drop_pgp.read_bytes())
+        print(f"  refreshed customer001 drop → {drop_pgp}")
+
     print("Done. Demo object: data/s3/demo/orders_encrypted.csv.pgp")
     return 0
 

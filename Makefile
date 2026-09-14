@@ -1,4 +1,4 @@
-.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql api worker web build docker-up docker-down lint desktop desktop-install desktop-lint dist-mac mac-pack
+.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql demo-customer001 customer001-wedge customer001-wedge-pg customer001-fail-injects api worker web build docker-up docker-down lint desktop desktop-install desktop-lint dist-mac mac-pack
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -83,6 +83,21 @@ demo-databricks-sql: seed
 demo-lookup-join: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
 		python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.json
+
+# Customer001 LOCAL wedge (filesystem; DEMO postgres mirror). Never LIVE_EXTERNAL.
+demo-customer001: seed
+	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 scripts/customer001_local_wedge.py --mode demo
+
+customer001-wedge: demo-customer001
+
+# Real local Postgres (Mac/CI service). Requires LOCAL_POSTGRES_DSN + FORMULAETL_DEMO=0.
+customer001-wedge-pg: seed
+	FORMULAETL_DEMO=0 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 scripts/customer001_local_wedge.py --mode postgres
+
+customer001-fail-injects: seed
+	bash scripts/customer001_fail_injections/run_all.sh
 
 api: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
