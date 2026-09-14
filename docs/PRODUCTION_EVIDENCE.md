@@ -19,7 +19,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | Includes Phase G validate tests. `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
+| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | **154 passed**, 1 skipped (`RUN_CSV_1M`), warnings (pgpy). Includes Phase G validate (+8). `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
 | A2 | Web production build | PROVEN | `cd apps/web && npm run build` | Optional CI job `web-build` | this PR | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` / PRs | PROVEN | `.github/workflows/ci.yml` | pytest + DEMO=1; optional npm build. **No live cloud checks.** | this PR | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
@@ -94,4 +94,5 @@ Merged on main as `3d1d9c9`. See prior H1–H8 claims (connections CRUD, test, S
 
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
-- Pytest count: fill after green run on this PR.
+- CLI `formulaetl run` resolves env secret refs; ConnectionStore requires the API/DB path.
+- Pytest **count** for Phase G: **154 passed**, 1 skipped (Phase F was 146; Phase D+E was 133).
