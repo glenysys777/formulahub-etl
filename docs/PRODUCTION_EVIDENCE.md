@@ -3,7 +3,7 @@
 Claims in sales/README are **not** evidence. Each row is a statement we are willing to make only with a command, git SHA, and date.
 
 **Audit SHA (main / Phase A merge):** `cecb1af` (PR #4)  
-**Phase B branch:** `cursor/batch-stream-abstraction-d316`  
+**Phase B branch tip:** `92b3d7a` (`cursor/batch-stream-abstraction-d316`)  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
