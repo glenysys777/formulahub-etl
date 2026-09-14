@@ -6,6 +6,8 @@
 
 **This document is Phase A** (code inspection at `b162987`, merged as PR #4). Phase B (batch/stream abstraction) landed later in-process — see `docs/PRODUCTION_EVIDENCE.md` section E. No Spark/K8s/billing in either phase.
 
+**PROVE+SELL (CUSTOMER_001):** use [`docs/CUSTOMER001_EVIDENCE_MATRIX.md`](./CUSTOMER001_EVIDENCE_MATRIX.md) + [`docs/PROVE_SELL_FREEZE.md`](./PROVE_SELL_FREEZE.md) as the founder-facing evidence freeze. Tip audited for that pack: `067b80d`. Never claim LIVE from `FORMULAETL_DEMO=1`.
+
 ---
 
 ## Levels (use these words only)
