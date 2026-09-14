@@ -56,6 +56,8 @@ class PipelineStore:
 
 
 class RunStore:
+    """In-process run history. Lost on restart — not a production run ledger."""
+
     def __init__(self) -> None:
         self._runs: dict[str, RunResult] = {}
         self._lock = threading.Lock()
