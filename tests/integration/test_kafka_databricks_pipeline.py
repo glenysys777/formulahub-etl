@@ -27,7 +27,7 @@ def test_kafka_databricks_demo_pipeline(work_dir: Path):
 
     assert result.status == "success", result.error
     assert result.node_metrics["kafka"]["rows_out"] == 8
-    assert result.node_metrics["map"]["rows_out"] == 8
+    assert result.node_metrics["field_mapper"]["rows_out"] == 8
     assert result.node_metrics["databricks"]["rows_out"] == 8
 
     out_dir = work_dir / "data" / "out" / "databricks_demo"

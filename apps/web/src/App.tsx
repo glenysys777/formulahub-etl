@@ -1171,16 +1171,25 @@ function AppCanvas() {
                       type="button"
                       className="btn btn-primary btn-open-mapper"
                       data-testid="open-schema-mapper"
-                      title="Open Field Mapper (Enter or ⌘↵)"
+                      title={
+                        selectedData.componentType === "tmap"
+                          ? "Open Field Mapper (Enter or ⌘↵)"
+                          : "Open Schema Map (Enter or ⌘↵)"
+                      }
                       aria-keyshortcuts="Enter Meta+Enter Control+Enter"
                       onClick={() => openMapper(selected.id)}
                     >
-                      <span className="btn-open-mapper-label">Open Field Mapper</span>
+                      <span className="btn-open-mapper-label">
+                        {selectedData.componentType === "tmap"
+                          ? "Open Field Mapper"
+                          : "Open Schema Map"}
+                      </span>
                       <span className="btn-open-mapper-keys">Enter · ⌘↵</span>
                     </button>
                     <p className="mapper-hint">
-                      Double-click the node or press Enter — Input · Variables · Output. To merge two
-                      sources first, use Lookup Join.
+                      {selectedData.componentType === "tmap"
+                        ? "Double-click the node or press Enter — Input · Variables · Output. To merge two sources first, use Lookup Join."
+                        : "Double-click the node or press Enter — map Input columns to Output. For Variables and expressions, use Field Mapper."}
                     </p>
                   </div>
                 )}
