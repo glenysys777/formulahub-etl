@@ -1,0 +1,11 @@
+customer_id,segment,region
+201,smb,NA
+202,enterprise,NA
+203,smb,NA
+204,enterprise,NA
+205,smb,EMEA
+206,enterprise,EMEA
+207,smb,EMEA
+208,enterprise,EMEA
+300,unknown,NA
+301,unknown,NA

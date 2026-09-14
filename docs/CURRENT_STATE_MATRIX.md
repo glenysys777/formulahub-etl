@@ -16,7 +16,8 @@ Status: **DEMO** | **ALPHA** | **ABSENT**. Risk: **blocker** | **high** | **medi
 | Run summary / node_runs / events | ALPHA | low | Keep clear; no vanity dashboards |
 | Global sync run lock | ABSENT (removed) | — | Concurrent claimed runs OK |
 | In-process cron (enqueue-only) | DEMO / ALPHA bookkeeping | high | Out-of-process scheduler later |
-| CI on GitHub | ALPHA (pytest DEMO=1 + npm build) | medium (was high) | Live E2E remains manual/design-partner |
+| CI on GitHub | ALPHA (pytest DEMO=1 + npm build + optional local Postgres service) | medium (was high) | Live E2E remains manual/design-partner; Customer001 LOCAL_PROVEN ≠ LIVE_EXTERNAL |
+| Customer001 LOCAL wedge (FS + optional local PG) | ALPHA (LOCAL_PROVEN / LOCAL/DEMO) | medium | `docs/CUSTOMER001_LOCAL_WEDGE.md`; never claim LIVE from this path |
 | Local CSV (chunked + malformed policy) | ALPHA | medium | Spill for multi-million; keep adapter honesty |
 | Field Mapper + Lookup Join | ALPHA | medium | Keep; add size guards |
 | PGP (pgpy) path/temp + refs | ALPHA lib / DEMO keys | high (key handling) | No private keys in git for customers; prefer refs |

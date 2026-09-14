@@ -4,6 +4,7 @@ data/archive/
 data/rejects/
 data/tmp/
 data/bench/
+data/drop/
 data/pipelines/
 pipelines/
 data/schedules/

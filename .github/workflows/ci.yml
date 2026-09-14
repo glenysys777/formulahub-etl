@@ -9,6 +9,21 @@ jobs:
   pytest:
     name: pytest (DEMO=1)
     runs-on: ubuntu-latest
+    services:
+      # Optional local Postgres for Customer001 LOCAL_PROVEN path (not LIVE_EXTERNAL).
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: formula
+          POSTGRES_PASSWORD: formula
+          POSTGRES_DB: formulahub_wedge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U formula -d formulahub_wedge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +47,11 @@ jobs:
         run: python3 -m pytest tests -q --tb=short -m "not live and not bench"
         env:
           FORMULAETL_DEMO: "1"
-          # conftest also forces DEMO=1; no live cloud credentials in CI
+          # Customer001 LOCAL_PROVEN optional path (real local Postgres service).
+          # Still NOT LIVE_EXTERNAL — no SFTP/S3/Snowflake/Databricks.
+          LOCAL_POSTGRES_DSN: "host=127.0.0.1 port=5432 dbname=formulahub_wedge user=formula password=formula"
+          LOCAL_POSTGRES_TABLE: "customers_wedge"
+          # conftest also forces DEMO=1 for most tests; customer001 postgres test monkeypatches DEMO=0
           # Do NOT set RUN_LIVE_WEDGE or RUN_BENCH here
 
   web-build:
@@ -97,9 +116,10 @@ jobs:
 # Artifacts: apps/desktop/release/*.dmg — unsigned unless CSC_* secrets are set.
 # See docs/studio/DESKTOP_SHELL.md
 
-# Live connector E2E (AWS/SFTP/Snowflake/Kafka/Databricks/Postgres) is intentionally
+# Live connector E2E (AWS/SFTP/Snowflake/Kafka/Databricks/Postgres cloud) is intentionally
 # NOT run here. Design partners prove live paths manually — see
 # docs/design-partner/LIVE_WEDGE.md and PRODUCTION_CHECKLIST.md
 # Harness: scripts/live_wedge_e2e.py / tests/live (marker: live)
 # LOCAL/DEMO scale benches: scripts/local_wedge_bench.py / tests/bench (marker: bench)
-# Opt-in: RUN_BENCH=1 make bench — never claim LIVE_CLOUD from these numbers
+# Customer001 LOCAL wedge: scripts/customer001_local_wedge.py (LOCAL_PROVEN with CI Postgres service)
+# Opt-in: RUN_BENCH=1 make bench — never claim LIVE_CLOUD / LIVE_EXTERNAL from these numbers

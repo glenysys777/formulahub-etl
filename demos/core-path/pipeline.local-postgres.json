@@ -1,0 +1,78 @@
+{
+  "id": "demo-core-path-local-postgres",
+  "name": "LOCAL: Excel → Field Mapper → Postgres (customers_wedge)",
+  "description": "LOCAL_PROVEN retarget of core-path: Excel fixture → Field Mapper → formulahub_wedge.customers_wedge (CSV dest kept as optional side output). LIVE_EXTERNAL = UNPROVEN.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "excel",
+      "type": "excel_source",
+      "label": "Excel Source",
+      "config": {
+        "path": "fixtures/sample/orders.xlsx",
+        "sheet_name": "Orders",
+        "has_header": true
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "field_mapper",
+      "type": "tmap",
+      "label": "Field Mapper → customers_wedge",
+      "config": {
+        "mappings": [
+          "customer_id=str(col(\"Customer ID\"))",
+          "email=lower(col(\"Email\"))",
+          "signup_date=col(\"Order Date\")",
+          "loaded_at='local-core-path'"
+        ],
+        "drop_unmapped": true
+      },
+      "position": { "x": 280, "y": 180 }
+    },
+    {
+      "id": "dedupe",
+      "type": "dedupe",
+      "label": "Dedupe customer_id",
+      "config": { "keys": ["customer_id"], "keep": "first" },
+      "position": { "x": 520, "y": 180 }
+    },
+    {
+      "id": "dest",
+      "type": "postgres_destination",
+      "label": "Postgres LOCAL (customers_wedge)",
+      "config": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "formulahub_wedge",
+        "table": "customers_wedge",
+        "if_exists": "replace",
+        "demo_output_dir": "data/out/local_postgres/core_path"
+      },
+      "position": { "x": 760, "y": 120 }
+    },
+    {
+      "id": "csv",
+      "type": "local_file_destination",
+      "label": "Local CSV mirror",
+      "config": {
+        "path": "data/out/core_path_customers_wedge.csv",
+        "format": "csv"
+      },
+      "position": { "x": 760, "y": 280 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "excel", "target": "field_mapper" },
+    { "id": "e2", "source": "field_mapper", "target": "dedupe" },
+    { "id": "e3", "source": "dedupe", "target": "dest" },
+    { "id": "e4", "source": "dedupe", "target": "csv" }
+  ],
+  "metadata": {
+    "demo": false,
+    "classification": "LOCAL_PROVEN",
+    "requires_demo_mode": false,
+    "honesty": "LOCAL Excel + LOCAL Postgres. Not LIVE_EXTERNAL.",
+    "adapted_from": "demos/core-path/pipeline.json"
+  }
+}

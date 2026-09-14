@@ -1,0 +1,16 @@
+{
+  "classification": "LOCAL_PROVEN",
+  "honesty": "Local filesystem + optional local Postgres only. NOT LIVE_EXTERNAL.",
+  "N": 12,
+  "R": 2,
+  "D": 2,
+  "L": 8,
+  "equation": "N = R + D + L",
+  "files_in": 1,
+  "notes": [
+    "N = CSV parse rows_out",
+    "R = schema_validate rows_rejected (bad email)",
+    "D = dedupe rows_rejected (duplicate order_id)",
+    "L = postgres_destination rows_out"
+  ]
+}

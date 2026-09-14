@@ -285,6 +285,8 @@ class PostgresDestination(BaseComponent):
             if not table.replace("_", "").isalnum():
                 raise ValueError(f"PostgresDestination: invalid table name {table!r}")
 
+            # TEXT columns: schema casting happens upstream; keep inserts robust.
+            col_defs = ", ".join(f'"{c}" TEXT' for c in cols)
             col_list = ", ".join(f'"{c}"' for c in cols)
             placeholders = ", ".join(["%s"] * len(cols))
             insert_sql = f'INSERT INTO "{table}" ({col_list}) VALUES ({placeholders})'
@@ -292,8 +294,21 @@ class PostgresDestination(BaseComponent):
             dsn = _build_dsn(self.config)
             with psycopg.connect(dsn) as conn:
                 with conn.cursor() as cur:
-                    if if_exists == "replace":
-                        cur.execute(f'TRUNCATE TABLE "{table}"')
+                    cur.execute(
+                        "SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = %s",
+                        (table,),
+                    )
+                    exists = cur.fetchone() is not None
+                    if exists and if_exists == "fail":
+                        raise ValueError(
+                            f"PostgresDestination: table {table!r} already exists"
+                        )
+                    if exists and if_exists == "replace":
+                        cur.execute(f'DROP TABLE IF EXISTS "{table}"')
+                        exists = False
+                    if not exists:
+                        cur.execute(f'CREATE TABLE "{table}" ({col_defs})')
                     cur.executemany(
                         insert_sql,
                         [tuple(r.get(c) for c in cols) for r in clean],

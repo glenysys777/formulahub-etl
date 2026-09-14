@@ -1,0 +1,140 @@
+{
+  "id": "demo-s3-pgp-snowflake-local-postgres",
+  "name": "LOCAL: encrypted file → PGP → validate → map → Postgres (customers_wedge)",
+  "description": "LOCAL_PROVEN retarget of s3-pgp-snowflake: local encrypted drop (not S3) + formulahub_wedge.customers_wedge (not Snowflake). LIVE_EXTERNAL = UNPROVEN.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "src",
+      "type": "local_file_source",
+      "label": "Local encrypted drop",
+      "config": {
+        "path": "data/s3/demo/orders_encrypted.csv.pgp",
+        "format": "bytes"
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "pgp",
+      "type": "pgp_decrypt",
+      "label": "PGP Decrypt",
+      "config": {
+        "private_key_path": "fixtures/keys/demo_private.asc",
+        "passphrase": ""
+      },
+      "position": { "x": 260, "y": 180 }
+    },
+    {
+      "id": "parse",
+      "type": "csv_parser",
+      "label": "CSV Parse",
+      "config": { "delimiter": "," },
+      "position": { "x": 480, "y": 180 }
+    },
+    {
+      "id": "validate",
+      "type": "schema_validate",
+      "label": "Schema Validate",
+      "config": {
+        "columns": {
+          "order_id": "int",
+          "customer_id": "int",
+          "customer_name": "string",
+          "email": "email",
+          "phone": "string",
+          "country": "string",
+          "city": "string",
+          "product_sku": "string",
+          "product_name": "string",
+          "quantity": "int",
+          "unit_price": "float",
+          "currency": "string",
+          "order_date": "string",
+          "ship_date": "date",
+          "status": "string",
+          "channel": "string",
+          "notes": "string"
+        },
+        "required_columns": [
+          "order_id", "customer_id", "customer_name", "email",
+          "product_sku", "quantity", "unit_price", "order_date", "ship_date", "status"
+        ]
+      },
+      "position": { "x": 700, "y": 180 }
+    },
+    {
+      "id": "project",
+      "type": "tmap",
+      "label": "Project → customers_wedge",
+      "config": {
+        "mappings": [
+          "customer_id=str(customer_id)",
+          "email=lower(email)",
+          "signup_date=order_date",
+          "loaded_at='local-wedge'"
+        ],
+        "drop_unmapped": true
+      },
+      "position": { "x": 920, "y": 80 }
+    },
+    {
+      "id": "dedupe",
+      "type": "dedupe",
+      "label": "Dedupe customer_id",
+      "config": { "keys": ["customer_id"], "keep": "first" },
+      "position": { "x": 1140, "y": 80 }
+    },
+    {
+      "id": "dest",
+      "type": "postgres_destination",
+      "label": "Postgres LOCAL (customers_wedge)",
+      "config": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "formulahub_wedge",
+        "table": "customers_wedge",
+        "if_exists": "replace",
+        "demo_output_dir": "data/out/local_postgres/s3_pgp"
+      },
+      "position": { "x": 1360, "y": 80 }
+    },
+    {
+      "id": "rejects",
+      "type": "local_file_destination",
+      "label": "Rejects",
+      "config": {
+        "path": "data/rejects/local_postgres_s3_pgp_rejects.csv",
+        "format": "csv"
+      },
+      "position": { "x": 920, "y": 300 }
+    },
+    {
+      "id": "archive",
+      "type": "archive_files",
+      "label": "Archive",
+      "config": {
+        "source": "data/s3/demo/orders_encrypted.csv.pgp",
+        "destination": "data/archive/local_postgres/",
+        "mode": "copy"
+      },
+      "position": { "x": 1360, "y": 300 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "src", "target": "pgp" },
+    { "id": "e2", "source": "pgp", "target": "parse" },
+    { "id": "e3", "source": "parse", "target": "validate" },
+    { "id": "e4", "source": "validate", "target": "project", "sourceHandle": "out" },
+    { "id": "e5", "source": "project", "target": "dedupe" },
+    { "id": "e6", "source": "dedupe", "target": "dest" },
+    { "id": "e7", "source": "validate", "target": "rejects", "sourceHandle": "rejects" },
+    { "id": "e8", "source": "dest", "target": "archive" }
+  ],
+  "metadata": {
+    "demo": false,
+    "classification": "LOCAL_PROVEN",
+    "requires_demo_mode": false,
+    "honesty": "LOCAL file + LOCAL Postgres. Not S3/Snowflake LIVE_EXTERNAL.",
+    "adapted_from": "demos/s3-pgp-snowflake/pipeline.json"
+  }
+}

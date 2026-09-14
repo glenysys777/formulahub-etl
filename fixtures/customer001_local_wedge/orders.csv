@@ -1,0 +1,13 @@
+order_id,customer_id,email,quantity,unit_price,order_date,status
+1,201,buyer1@example.com,2,11.00,2024-02-02,shipped
+2,202,buyer2@example.com,3,12.00,2024-03-03,pending
+3,203,buyer3@example.com,4,13.00,2024-04-04,shipped
+4,204,buyer4@example.com,5,14.00,2024-05-05,pending
+5,205,buyer5@example.com,1,15.00,2024-06-06,shipped
+6,206,buyer6@example.com,2,16.00,2024-07-07,pending
+7,207,buyer7@example.com,3,17.00,2024-08-08,shipped
+8,208,buyer8@example.com,4,18.00,2024-09-09,pending
+1,201,buyer1@example.com,2,11.00,2024-02-02,shipped
+2,202,buyer2@example.com,3,12.00,2024-03-03,pending
+9001,300,not-an-email,1,1.00,2024-06-15,pending
+9002,301,not-an-email,1,1.00,2024-06-15,pending

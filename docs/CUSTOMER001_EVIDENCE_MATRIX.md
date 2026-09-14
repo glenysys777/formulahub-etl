@@ -1,6 +1,6 @@
 # CUSTOMER_001 — Production evidence matrix (PROVE+SELL)
 
-**Audited tip:** `067b80d` (`origin/main`, 2026-09-14)  
+**Audited tip:** `1549d6d` (`origin/main`) + LOCAL wedge PR (2026-09-14)  
 **Mission:** Honest production-evidence for design-partner sell. **Never claim LIVE proven from `FORMULAETL_DEMO=1`.**  
 **Sources:** code under `packages/runner`, `packages/api`, demos, `tests/`, and prior audits (`PRODUCTION_READINESS.md`, `PRODUCTION_EVIDENCE.md`, `CURRENT_STATE_MATRIX.md`). Sales copy is **not** evidence.
 
@@ -106,3 +106,37 @@ LIVE Databricks = real `workspace_host` + token (+ `warehouse_id` for SQL) with 
 - Live harness: [`design-partner/LIVE_WEDGE.md`](./design-partner/LIVE_WEDGE.md)
 - Founder demo script: [`demo/THREE_MINUTE_FOUNDER_DEMO.md`](./demo/THREE_MINUTE_FOUNDER_DEMO.md)
 - Internal price bands: [`sales/IMPLEMENTATION_PRICE_GUIDELINES.md`](./sales/IMPLEMENTATION_PRICE_GUIDELINES.md)
+
+---
+
+## LOCAL wedge pack (this PR) — filesystem + optional local Postgres
+
+**Classification honesty:** rows below are **LOCAL_PROVEN / LOCAL/DEMO / LOCAL_ONLY** only. They do **not** flip any LIVE EXTERNAL FAIL row above to YES.
+
+| ID | Claim | Classification | Status | Command / evidence | Notes |
+|----|-------|----------------|--------|--------------------|-------|
+| L0 | Fixture pack + pipeline JSON exist | LOCAL_ONLY | PROVEN | `fixtures/customer001_local_wedge/`, `demos/customer001-local-wedge/pipeline.json` | Encrypted drop + lookup + expected counts |
+| L1 | DEMO path reconciles N=R+D+L | LOCAL/DEMO | PROVEN | `python3 scripts/customer001_local_wedge.py --mode demo` | Postgres node → SQLite/CSV mirror |
+| L2 | Pytest always-on reconcile | LOCAL/DEMO | PROVEN | `pytest tests/integration/test_customer001_local_wedge.py` | CI-safe |
+| L3 | Real local Postgres INSERT → `formulahub_wedge.customers_wedge` | LOCAL_PROVEN | PROVEN* | `FORMULAETL_DEMO=0` + `LOCAL_POSTGRES_DSN=host=localhost dbname=formulahub_wedge` + `--mode postgres`; Mac `START-POSTGRES.command` (`LC_ALL=en_US.UTF-8`) | *When Postgres up; CI skips → LOCAL_ONLY. **Not** LIVE cloud Postgres. |
+| L4 | Rejects file written | LOCAL/DEMO | PROVEN | `data/rejects/customer001/…` | R=2 |
+| L5 | Archive copy of drop | LOCAL/DEMO | PROVEN | `data/archive/customer001/…` | copy mode |
+| L6 | Metrics + node timings + peak RSS | LOCAL_ONLY | PROVEN | harness JSON | `data/out/customer001/wedge_report.json` |
+| L7–L12 | Fail injects (bad PGP, missing file, bad CSV, schema drift, dest down, retry) | LOCAL_ONLY | PROVEN | `scripts/customer001_fail_injections/` | Expect fail / retry OK |
+| L13 | Adapted demos → local PG | LOCAL_PROVEN | PROVEN* | `demos/*/pipeline.local-postgres.json` (s3-pgp-snowflake, core-path, lookup-join-mapper) | Local files + `customers_wedge`; S3/Snowflake remain LIVE **UNPROVEN** |
+| L14 | Mac pack `START-POSTGRES.command` | LOCAL_ONLY | PROVEN | `scripts/START-POSTGRES.command` → FormulaHub-ETL-Mac pack | Locale fix + DDL |
+
+**Expected counts:** `N=12 = R=2 + D=2 + L=8`.
+
+**Mac LOCAL_PROVEN quick path:**
+
+```bash
+# Double-click FormulaHub-ETL-Mac/START-POSTGRES.command
+export FORMULAETL_DEMO=0
+export LOCAL_POSTGRES_DSN="host=localhost port=5432 dbname=formulahub_wedge"
+python3 scripts/customer001_local_wedge.py --mode postgres
+```
+
+**Do not** use L* rows to mark C1–C6 or LIVE Databricks/Kafka as proven.
+
+Docs: [`CUSTOMER001_LOCAL_WEDGE.md`](./CUSTOMER001_LOCAL_WEDGE.md) · Harness: `scripts/customer001_local_wedge.py`
