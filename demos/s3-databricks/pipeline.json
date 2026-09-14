@@ -1,0 +1,45 @@
+{
+  "id": "demo-s3-databricks",
+  "name": "S3 → Databricks Job",
+  "description": "Object-storage drop to Databricks job trigger: S3 Source (demo mock) hands off to Databricks Job (demo sidecar). Orchestration only — not an embedded Spark engine.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "s3",
+      "type": "s3_source",
+      "label": "S3 Source",
+      "config": {
+        "bucket": "demo",
+        "key": "demo/orders_encrypted.csv.pgp",
+        "region": "us-east-1"
+      },
+      "position": { "x": 40, "y": 180 }
+    },
+    {
+      "id": "databricks",
+      "type": "databricks_job",
+      "label": "Databricks Job",
+      "config": {
+        "workspace_host": "demo",
+        "job_id": "2002",
+        "notebook_params": [
+          "source=s3",
+          "bucket=demo"
+        ],
+        "wait_for_completion": true,
+        "poll_interval_sec": 1,
+        "demo": true,
+        "demo_output_dir": "data/out/databricks_demo"
+      },
+      "position": { "x": 320, "y": 180 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "s3", "target": "databricks" }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "s3-databricks"
+  }
+}

@@ -18,6 +18,11 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 | Local File Source | `local_file_source` | Path on disk |
 | Excel Source | `excel_source` | `.xlsx` sheets; Discover schema supported |
 | HTTP / REST API Source | `http_api_source` | Demo fixture for example.com / `demo=true` |
+| **Kafka Source** | `kafka_source` | Demo → `fixtures/sample/kafka_orders.jsonl` when `FORMULAETL_DEMO=1` or brokers=`demo`. Live needs optional `formulaetl[kafka]` or `confluent-kafka` |
+
+> **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default DEMO=1 use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
+
+> **Honesty:** Kafka Source + Databricks Job Trigger are production-shaped (real client libraries / Jobs API when credentials set) but **CI and default `FORMULAETL_DEMO=1` use fixtures/sidecars — live Kafka/Databricks against customer clusters is unproven until a design-partner run.** Do not claim live E2E in CI.
 | SFTP Source | `sftp_source` | Demo copies fixtures into staging — **no real SFTP wire** |
 | Postgres Source | `postgres_source` | Demo → SQLite `data/demo.db` or fixture rows |
 | MySQL Source | `mysql_source` | Demo → SQLite; live needs PyMySQL + `FORMULAETL_DEMO=0` |
@@ -54,12 +59,20 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 | Local File Destination | `local_file_destination` | CSV / JSON paths under `data/out/` |
 | Excel Destination | `excel_destination` | Write `.xlsx` |
 | Snowflake Destination | `snowflake_destination` | Demo → filesystem mock; real needs warehouse creds |
+| **Databricks Job** | `databricks_job` | Orchestration: trigger Jobs API run (workspace + token + job_id). Demo → sidecar JSON under `data/out/databricks_demo/`. **Not** an embedded Spark engine |
 | SFTP Destination | `sftp_destination` | Demo → `data/out/sftp_mock/` — **no real upload** |
 | Postgres Destination | `postgres_destination` | Demo → SQLite + CSV under `data/out/postgres_demo/` |
 | MySQL Destination | `mysql_destination` | Demo → SQLite pattern |
 | SQLite Destination | `sqlite_destination` | Local DB write |
 | Archive Files | `archive_files` | Move processed inputs |
 | Logger / Metrics | `logger_metrics` | Rows in/out, duration |
+
+### Scheduler (Community self-hosted)
+
+- **In-process cron scheduler** — enable per pipeline (cron + timezone); persists under `data/schedules/`; survives API restart
+- UI: Enable schedule / cron expression / timezone in the sidebar
+- API: `GET/PUT /api/pipelines/{id}/schedule`, `POST /api/scheduler/tick`
+- **Open-core note:** Community = self-hosted single-process scheduler. **Cloud HA scheduler** is a planned Enterprise / paid lock — do not invent list prices
 
 ### Schema discovery (product feature)
 
@@ -69,6 +82,14 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 - Demo polish: discovering `fixtures/sample/orders.xlsx` returns **Orders** columns (`Order ID`, `Customer Name`, …)
 
 ---
+
+## Component palette — primary non-AI path (now)
+
+The left **Components** palette lists every registered type from `GET /api/components`, grouped by category, with original colorful SVG icons and clear labels (no vendor trademark logos).
+
+- **Drag** a component onto the React Flow canvas, or **click** to add it with sensible defaults
+- **New blank** starts an empty pipeline so users can build API → map → transform → load without AI Build or Load demo
+- AI Build and Load demo remain shortcuts; the palette is the main manual path
 
 ## Visual Field Mapper — MVP (now)
 
@@ -97,18 +118,27 @@ What data engineers expect when mapping columns:
 | Gap | Status |
 |-----|--------|
 | Advanced multi-output visual mapper IDE | Field Mapper MVP shipped; advanced IDE later |
-| Spark / Big Data batch | Explicitly out of Community MVP |
+| Spark / Big Data batch engine | Explicitly out of Community MVP — use **Databricks Job** to trigger *their* jobs |
 | Joblets, shared contexts, enterprise lineage UI | Enterprise tier *(planned)* |
 | Full JDBC catalog (Oracle, SQL Server, …) | After Postgres / MySQL pattern |
-| Kafka / event streams, Salesforce / SAP / mainframe | Later |
+| Salesforce / SAP / mainframe | Later |
+| Cloud HA multi-node scheduler | Enterprise / paid *(planned)* — Community ships self-hosted poller |
 | Airflow / Kestra exporters | Orchestration roadmap |
 
 ---
 
 ## Demo paths to show
 
-1. **Core path** — Excel → Field Mapper → Filter → Sort → Aggregate → File (open Field Mapper → Discover from upstream)  
-2. `demos/excel-to-file` — Excel → Schema Map → Transform → File  
-3. `demos/python-row-flex` — API → map → Python Row → File  
-4. `demos/s3-pgp-snowflake` — S3 → PGP → Validate → Snowflake demo → Archive  
-5. Existing Excel, SFTP, Postgres, API demos under `demos/`
+1. **Kafka → Databricks** — `demos/api-kafka-databricks` (fixture Kafka → Field Mapper → Databricks Job demo)
+2. **S3 → Databricks** — `demos/s3-databricks` (S3 mock → Databricks Job trigger)
+3. **Core path** — Excel → Field Mapper → Filter → Sort → Aggregate → File
+4. `demos/excel-to-file` — Excel → Schema Map → Transform → File  
+5. `demos/python-row-flex` — API → map → Python Row → File  
+6. `demos/s3-pgp-snowflake` — S3 → PGP → Validate → Snowflake demo → Archive  
+7. Existing Excel, SFTP, Postgres, API demos under `demos/`
+
+## Open-core honesty
+
+- **OSS core stays:** visual canvas, runner, Kafka Source, Databricks Job orchestration, Community scheduler, AI Build shortcut  
+- **Enterprise locks later *(planned)*:** SSO, RBAC, lineage UI, HA scheduler — no fabricated prices  
+- Icons are **original SVG/CSS** with text labels (S3 Source, Kafka Source, Databricks Job) — never official AWS / Kafka / Databricks trademark logo assets

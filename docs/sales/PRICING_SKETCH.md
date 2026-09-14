@@ -16,12 +16,13 @@ License for core: **Apache License 2.0**.
 **Includes (available now):**
 - Visual React Flow canvas  
 - Python DAG runner + component SDK  
-- Core connectors/components in the MVP catalog (file, Excel, API, SFTP, DB shapes, S3 mock/real path, PGP, CSV/JSON/XML, validate, transform, Field Mapper, filter, sort, aggregate, Python Row, Snowflake demo/real path, archive, metrics)  
+- Core connectors/components in the MVP catalog (file, Excel, API, **Kafka**, SFTP, DB shapes, S3 mock/real path, PGP, CSV/JSON/XML, validate, transform, Field Mapper, filter, sort, aggregate, Python Row, Snowflake demo/real path, **Databricks Job trigger**, archive, metrics)  
+- **Community self-hosted cron scheduler** (per-pipeline enable / cron / timezone)  
 - AI Pipeline Builder (offline heuristic; BYO `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` optional)  
 - Local / self-hosted deploy (Makefile, Docker Compose)  
 - Apache 2.0 — use, modify, redistribute per license  
 
-**Does not include:** Hosted SaaS, SSO, formal support SLAs, enterprise lineage UI.
+**Does not include:** Hosted SaaS, SSO, formal support SLAs, enterprise lineage UI, **HA multi-node scheduler**.
 
 **CTA:** Clone, `make install && make seed`, run the demo. No credit card. See formulahub.io/etl.
 
@@ -52,11 +53,12 @@ License for core: **Apache License 2.0**.
 - **SSO** (SAML/OIDC) *(planned)*  
 - **RBAC** *(planned)*  
 - **Lineage** / audit-friendly pipeline history *(planned)*  
+- **HA / multi-node scheduler** *(planned — Community ships self-hosted single-process)*  
 - Priority support / SLAs *(planned)*  
 - Air-gap / private deploy guidance *(planned)*  
 - Commercial terms for support and extras while core stays Apache 2.0  
 
-**Pricing:** Custom — based on seats, environments, and support tier. **TBD.**
+**Pricing:** Custom — based on seats, environments, and support tier. **TBD.** Do not invent list prices.
 
 **CTA:** “[EMAIL] — enterprise evaluation; we’ll share current MVP boundaries and roadmap in writing.”
 

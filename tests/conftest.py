@@ -41,6 +41,7 @@ def work_dir(tmp_path: Path) -> Path:
     (tmp_path / "data" / "out" / "sftp_mock").mkdir(parents=True)
     (tmp_path / "data" / "out" / "postgres_demo").mkdir(parents=True)
     (tmp_path / "data" / "out" / "mysql_demo").mkdir(parents=True)
+    (tmp_path / "data" / "out" / "databricks_demo").mkdir(parents=True)
     (tmp_path / "data" / "out" / "sftp_staging").mkdir(parents=True)
     (tmp_path / "data" / "archive").mkdir(parents=True)
     (tmp_path / "data" / "rejects").mkdir(parents=True)

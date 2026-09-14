@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
@@ -10,6 +11,7 @@ import {
   type NodeTypes,
   useEdgesState,
   useNodesState,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -22,17 +24,110 @@ import {
   type PipelineNode,
   type RunStatus,
 } from "./api";
-import { EtlNode, type EtlNodeData, type RunVisual } from "./EtlNode";
+import { EtlNode, ComponentGlyph, categoryForType, CAT_COLORS, type EtlNodeData, type RunVisual } from "./EtlNode";
 import { NodeInspector, missingRequiredKeys } from "./NodeInspector";
 import { SchemaMapper } from "./SchemaMapper";
 
-const DEMO_ID = "demo-core-path";
+const DEMO_ID = "demo-api-kafka-databricks";
 const DEFAULT_PROMPT =
-  "Read encrypted files from S3, decrypt using PGP, validate these 17 columns, reject invalid records, transform dates, load good records into Snowflake and archive processed files.";
+  "Read orders from a Kafka topic, map fields, and trigger a Databricks notebook job.";
 
 function isMapperType(t: string): boolean {
   return t === "column_map" || t === "tmap";
 }
+
+const PALETTE_ORDER = [
+  "kafka_source",
+  "s3_source",
+  "http_api_source",
+  "excel_source",
+  "sftp_source",
+  "local_file_source",
+  "postgres_source",
+  "mysql_source",
+  "sqlite_source",
+  "csv_parser",
+  "json_parser",
+  "xml_parser",
+  "column_map",
+  "tmap",
+  "transform",
+  "schema_validate",
+  "filter",
+  "sort",
+  "aggregate",
+  "dedupe",
+  "lookup_join",
+  "python_row",
+  "pgp_decrypt",
+  "pgp_encrypt",
+  "databricks_job",
+  "snowflake_destination",
+  "local_file_destination",
+  "excel_destination",
+  "sftp_destination",
+  "postgres_destination",
+  "mysql_destination",
+  "sqlite_destination",
+  "archive_files",
+  "logger_metrics",
+];
+
+function defaultConfigFor(type: string): Record<string, unknown> {
+  if (type === "kafka_source")
+    return {
+      brokers: "demo",
+      topic: "orders",
+      group_id: "formulaetl",
+      auto_offset_reset: "earliest",
+      max_messages: 100,
+      security: "plain",
+      format: "json",
+      demo: true,
+    };
+  if (type === "databricks_job")
+    return {
+      workspace_host: "demo",
+      job_id: "1001",
+      notebook_params: ["source=formulaetl"],
+      wait_for_completion: true,
+      demo: true,
+    };
+  if (type === "s3_source") return { bucket: "demo", key: "demo/orders_encrypted.csv.pgp" };
+  if (type === "http_api_source")
+    return { url: "https://api.example.com/v1/orders", method: "GET", json_path: "data.items", demo: true };
+  if (type === "local_file_destination") return { path: "data/out/output.csv", format: "csv" };
+  return {};
+}
+
+
+const CATEGORY_GROUP_ORDER = [
+  "source",
+  "stream",
+  "file",
+  "db",
+  "transform",
+  "quality",
+  "security",
+  "orch",
+  "destination",
+  "utility",
+] as const;
+
+const CATEGORY_GROUP_LABELS: Record<string, string> = {
+  source: "Sources",
+  stream: "Streams",
+  file: "Files",
+  db: "Databases",
+  transform: "Transform",
+  quality: "Quality",
+  security: "Security",
+  orch: "Orchestration",
+  destination: "Destinations",
+  utility: "Utility",
+};
+
+const DND_MIME = "application/formulaetl-component";
 
 const nodeTypes: NodeTypes = { etl: EtlNode };
 
@@ -121,7 +216,7 @@ function fromFlow(pipeline: Pipeline, nodes: Node[], edges: Edge[]): Pipeline {
   };
 }
 
-export default function App() {
+function AppCanvas() {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -135,10 +230,16 @@ export default function App() {
   const [mapperOpen, setMapperOpen] = useState(false);
   const [discoverBusy, setDiscoverBusy] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState<string | null>(null);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleCron, setScheduleCron] = useState("*/5 * * * *");
+  const [scheduleTz, setScheduleTz] = useState("UTC");
+  const [scheduleInfo, setScheduleInfo] = useState<string | null>(null);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const pipelineRef = useRef(pipeline);
+  const { screenToFlowPosition } = useReactFlow();
 
   nodesRef.current = nodes;
   edgesRef.current = edges;
@@ -150,6 +251,39 @@ export default function App() {
     return map;
   }, [components]);
 
+  const paletteItems = useMemo(() => {
+    const byType = new Map(components.map((c) => [c.type, c]));
+    const ordered: ComponentInfo[] = [];
+    for (const t of PALETTE_ORDER) {
+      const c = byType.get(t);
+      if (c) ordered.push(c);
+    }
+    for (const c of components) {
+      if (!PALETTE_ORDER.includes(c.type)) ordered.push(c);
+    }
+    return ordered;
+  }, [components]);
+
+  const paletteGroups = useMemo(() => {
+    const groups = new Map<string, ComponentInfo[]>();
+    for (const c of paletteItems) {
+      const cat = categoryForType(c.type);
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(c);
+    }
+    const ordered: { id: string; label: string; items: ComponentInfo[] }[] = [];
+    for (const id of CATEGORY_GROUP_ORDER) {
+      const items = groups.get(id);
+      if (items?.length) ordered.push({ id, label: CATEGORY_GROUP_LABELS[id] || id, items });
+    }
+    for (const [id, items] of groups) {
+      if (!CATEGORY_GROUP_ORDER.includes(id as (typeof CATEGORY_GROUP_ORDER)[number])) {
+        ordered.push({ id, label: CATEGORY_GROUP_LABELS[id] || id, items });
+      }
+    }
+    return ordered;
+  }, [paletteItems]);
+
   const loadPipeline = useCallback(
     async (p: Pipeline) => {
       setPipeline(p);
@@ -158,6 +292,22 @@ export default function App() {
       setEdges(flow.edges);
       setSelectedId(null);
       setRun(null);
+      try {
+        const sched = await api.getSchedule(p.id);
+        setScheduleEnabled(Boolean(sched.enabled));
+        setScheduleCron(sched.cron || "*/5 * * * *");
+        setScheduleTz(sched.timezone || "UTC");
+        setScheduleInfo(
+          sched.enabled && sched.next_run_at
+            ? `next_run_at: ${new Date(sched.next_run_at * 1000).toISOString()}`
+            : sched.last_status
+              ? `Last: ${sched.last_status}`
+              : null,
+        );
+      } catch {
+        setScheduleEnabled(false);
+        setScheduleInfo(null);
+      }
     },
     [setNodes, setEdges],
   );
@@ -254,6 +404,115 @@ export default function App() {
     }, 600);
   }, []);
 
+  const ensurePipeline = useCallback(async (): Promise<Pipeline> => {
+    if (pipelineRef.current) return pipelineRef.current;
+    const created = await api.createPipeline({
+      name: "Untitled pipeline",
+      description: "Built from the component palette (non-AI path)",
+      nodes: [],
+      edges: [],
+      metadata: { created_via: "palette" },
+    });
+    await loadPipeline(created);
+    return created;
+  }, [loadPipeline]);
+
+  const newBlankPipeline = useCallback(async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const created = await api.createPipeline({
+        name: "Untitled pipeline",
+        description: "Blank canvas — drag components from the palette",
+        nodes: [],
+        edges: [],
+        metadata: { created_via: "blank" },
+      });
+      await loadPipeline(created);
+      setMapperOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadPipeline]);
+
+  const addComponentNode = useCallback(
+    async (comp: ComponentInfo, position?: { x: number; y: number }) => {
+      try {
+        await ensurePipeline();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return;
+      }
+      const id = `${comp.type.replace(/_/g, "")}-${Math.random().toString(36).slice(2, 7)}`;
+      setNodes((nds) => {
+        const x = position?.x ?? 80 + nds.length * 36;
+        const y = position?.y ?? 120 + (nds.length % 4) * 40;
+        const label =
+          comp.type === "tmap" ? "Field Mapper" : comp.display_name || comp.type;
+        const newNode: Node = {
+          id,
+          type: "etl",
+          position: { x, y },
+          data: {
+            label,
+            componentType: comp.type,
+            config: defaultConfigFor(comp.type),
+            runVisual: "idle",
+          } satisfies EtlNodeData,
+        };
+        return [...nds, newNode];
+      });
+      setSelectedId(id);
+      schedulePersist();
+    },
+    [ensurePipeline, setNodes, schedulePersist],
+  );
+
+  const onPaletteDragStart = (event: DragEvent, comp: ComponentInfo) => {
+    event.dataTransfer.setData(DND_MIME, comp.type);
+    event.dataTransfer.setData("text/plain", comp.type);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const onCanvasDragOver = (event: DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+
+  const onCanvasDrop = async (event: DragEvent) => {
+    event.preventDefault();
+    const type = event.dataTransfer.getData(DND_MIME) || event.dataTransfer.getData("text/plain");
+    if (!type) return;
+    const comp = componentByType[type] || paletteItems.find((c) => c.type === type);
+    if (!comp) return;
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    await addComponentNode(comp, position);
+  };
+
+  const saveSchedule = async () => {
+    if (!pipeline) return;
+    setScheduleBusy(true);
+    setError(null);
+    try {
+      const spec = await api.putSchedule(pipeline.id, {
+        enabled: scheduleEnabled,
+        cron: scheduleCron.trim() || "*/5 * * * *",
+        timezone: scheduleTz.trim() || "UTC",
+      });
+      setScheduleInfo(
+        spec.enabled && spec.next_run_at
+          ? `next_run_at: ${new Date(spec.next_run_at * 1000).toISOString()}`
+          : "Schedule saved (disabled)",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
   const onAIBuild = async () => {
     if (!prompt.trim()) return;
     setBusy(true);
@@ -301,11 +560,18 @@ export default function App() {
       await api.updatePipeline(pipeline.id, updated);
       setPipeline(updated);
       const { run_id } = await api.runPipeline(pipeline.id);
-      // Brief flowing animation even if the API returns instantly
-      await new Promise((r) => setTimeout(r, 700));
-      const status = await api.getRun(run_id);
+      // Brief flowing animation, then poll until terminal (demo runs sync but stay resilient)
+      await new Promise((r) => setTimeout(r, 450));
+      let status = await api.getRun(run_id);
+      for (let i = 0; i < 40 && (status.status === "pending" || status.status === "running"); i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        status = await api.getRun(run_id);
+      }
       setRun(status);
       applyRunVisuals(false, status);
+      requestAnimationFrame(() => {
+        document.querySelector(".logs-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
       if (status.status === "failed") {
         setError(status.error || "Pipeline run failed");
       }
@@ -369,6 +635,16 @@ export default function App() {
           <button
             type="button"
             className="btn"
+            data-testid="new-blank"
+            onClick={newBlankPipeline}
+            disabled={busy}
+            title="Start an empty pipeline and add components from the palette"
+          >
+            New blank
+          </button>
+          <button
+            type="button"
+            className="btn"
             data-testid="load-demo"
             onClick={loadDemo}
             disabled={busy}
@@ -391,6 +667,45 @@ export default function App() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="main">
+        <aside className="palette" data-testid="component-palette" aria-label="Component palette">
+          <h3>Components</h3>
+          <p className="palette-hint">
+            Drag onto the canvas or click to add. Primary non-AI build path.
+          </p>
+          <div className="palette-list">
+            {paletteGroups.map((group) => (
+              <div key={group.id} className="palette-group" data-testid={`palette-group-${group.id}`}>
+                <div className="palette-group-label">{group.label}</div>
+                {group.items.map((c) => {
+                  const cat = categoryForType(c.type);
+                  const label =
+                    c.type === "tmap" ? "Field Mapper" : c.display_name || c.type;
+                  return (
+                    <button
+                      key={c.type}
+                      type="button"
+                      className={`palette-item cat-${cat}`}
+                      title={`${c.type} — drag or click to add`}
+                      draggable={!busy}
+                      data-testid={`palette-item-${c.type}`}
+                      disabled={busy}
+                      onDragStart={(e) => onPaletteDragStart(e, c)}
+                      onClick={() => void addComponentNode(c)}
+                    >
+                      <span className="palette-icon">
+                        <ComponentGlyph type={c.type} size={15} />
+                      </span>
+                      <span className="palette-label">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            {!paletteItems.length && (
+              <p className="empty-hint">Connect API to load palette from /api/components.</p>
+            )}
+          </div>
+        </aside>
         <div className={`canvas-wrap${busy ? " is-running" : ""}${!busy && run?.status === "success" ? " run-success" : ""}${!busy && run?.status === "failed" ? " run-failed" : ""}`}>
           <div className="ai-bar">
             <textarea
@@ -416,6 +731,8 @@ export default function App() {
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             fitView
+            onDrop={(e) => void onCanvasDrop(e)}
+            onDragOver={onCanvasDragOver}
             onNodeClick={(_, n) => { setSelectedId(n.id); setDiscoverMsg(null); setMapperOpen(false); }}
             onNodeDoubleClick={(_, n) => {
               setSelectedId(n.id);
@@ -433,6 +750,8 @@ export default function App() {
                 const t = (n.data as { componentType?: string })?.componentType || "";
                 if (t.includes("pgp")) return "#9333ea";
                 if (t.includes("schema_validate")) return "#eab308";
+                if (t.includes("databricks")) return CAT_COLORS.orch;
+                if (t.includes("kafka")) return CAT_COLORS.stream;
                 if (t.includes("snowflake") || t.includes("postgres") || t.includes("mysql") || t.includes("sqlite")) return "#4f46e5";
                 if (t.includes("file") || t.includes("excel") || t.includes("archive")) return "#0d9488";
                 if (t.includes("destination") || t.includes("sftp_destination")) return "#16a34a";
@@ -454,11 +773,63 @@ export default function App() {
                 <p className="pipeline-desc">{pipeline.description || "No description"}</p>
               </>
             ) : (
-              <p className="empty-hint">Load the demo or generate with AI.</p>
+              <p className="empty-hint">Use the palette, New blank, Load demo, or AI Build.</p>
             )}
           </div>
 
           <div className="sidebar-section">
+            <h3>Schedule</h3>
+            {pipeline ? (
+              <div className="schedule-form" data-testid="schedule-form">
+                <label className="schedule-row">
+                  <input
+                    type="checkbox"
+                    checked={scheduleEnabled}
+                    onChange={(e) => setScheduleEnabled(e.target.checked)}
+                    data-testid="schedule-enabled"
+                  />
+                  <span>Enable schedule</span>
+                </label>
+                <label className="field-label">Cron expression</label>
+                <input
+                  className="schedule-input"
+                  value={scheduleCron}
+                  onChange={(e) => setScheduleCron(e.target.value)}
+                  placeholder="*/5 * * * *"
+                  data-testid="schedule-cron"
+                />
+                <label className="field-label">Timezone</label>
+                <input
+                  className="schedule-input"
+                  value={scheduleTz}
+                  onChange={(e) => setScheduleTz(e.target.value)}
+                  placeholder="UTC"
+                  data-testid="schedule-tz"
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={scheduleBusy}
+                  onClick={saveSchedule}
+                  data-testid="schedule-save"
+                >
+                  {scheduleBusy ? "Saving…" : "Save schedule"}
+                </button>
+                {scheduleInfo && (
+                  <p className="schedule-info" data-testid="schedule-next-run">
+                    {scheduleInfo}
+                  </p>
+                )}
+                <p className="schedule-note">
+                  Community self-hosted scheduler. Cloud HA scheduling is a planned Enterprise lock.
+                </p>
+              </div>
+            ) : (
+              <p className="empty-hint">Open a pipeline (palette / blank / demo) to schedule runs.</p>
+            )}
+          </div>
+
+          <div className="sidebar-section" data-testid="last-run-panel">
             <h3>Last run</h3>
             {run ? (
               <>
@@ -494,6 +865,27 @@ export default function App() {
             )}
           </div>
 
+          <div className="sidebar-section logs-panel" data-testid="logs-panel">
+            <h3>Logs</h3>
+            <div className="logs" data-testid="run-logs">
+              {run?.logs?.length
+                ? run.logs.map((line, i) => (
+                    <div
+                      key={i}
+                      className={
+                        line.includes("FAILED")
+                          ? "err"
+                          : line.includes("successfully") || line.includes("✓")
+                            ? "ok-line"
+                            : undefined
+                      }
+                    >
+                      {line}
+                    </div>
+                  ))
+                : "No logs yet."}
+            </div>
+          </div>
           <div className="sidebar-section inspector-section">
             <h3>Node inspector</h3>
             {selected && selectedData ? (
@@ -568,27 +960,6 @@ export default function App() {
             )}
           </div>
 
-          <div className="sidebar-section logs-panel">
-            <h3>Logs</h3>
-            <div className="logs">
-              {run?.logs?.length
-                ? run.logs.map((line, i) => (
-                    <div
-                      key={i}
-                      className={
-                        line.includes("FAILED")
-                          ? "err"
-                          : line.includes("successfully") || line.includes("✓")
-                            ? "ok-line"
-                            : undefined
-                      }
-                    >
-                      {line}
-                    </div>
-                  ))
-                : "No logs yet."}
-            </div>
-          </div>
         </aside>
       </div>
 
@@ -614,5 +985,13 @@ export default function App() {
         <span>{API_BASE}</span>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <AppCanvas />
+    </ReactFlowProvider>
   );
 }

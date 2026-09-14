@@ -1,0 +1,25 @@
+{
+  "mode": "demo",
+  "workspace_host": "demo",
+  "job_id": "1001",
+  "run_id": "demo-200bb93d71",
+  "number_in_job": 1,
+  "state": {
+    "life_cycle_state": "TERMINATED",
+    "result_state": "SUCCESS",
+    "state_message": "Demo run completed successfully"
+  },
+  "life_cycle_state": "TERMINATED",
+  "result_state": "SUCCESS",
+  "notebook_params": {
+    "source": "kafka",
+    "pipeline": "formulaetl",
+    "row_count": "8"
+  },
+  "python_params": {},
+  "rows_passed": 8,
+  "start_time": "20260914T002755Z",
+  "triggered_at": "20260914T002755Z",
+  "run_page_url": "demo/#job/1001/run/demo-200bb93d71",
+  "note": "Demo mode \u2014 Jobs API\u2013shaped sidecar (no real workspace call). Set FORMULAETL_DEMO=0 and provide workspace_host + token for live /api/2.1/jobs/run-now."
+}

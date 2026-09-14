@@ -16,6 +16,7 @@ from formulaetl.engine.runner import PipelineRunner, RunResult
 from formulaetl.models.pipeline import PipelineDefinition
 from formulaetl.sdk.registry import list_components
 from formulaetl_api.ai_builder import build_pipeline_from_text
+from formulaetl_api.scheduler import PipelineScheduler, ScheduleStore
 from formulaetl_api.store import PipelineStore, RunStore
 
 WORK_DIR = Path(os.environ.get("FORMULAETL_WORK_DIR", Path(__file__).resolve().parents[2]))
@@ -23,7 +24,7 @@ DEMO_MODE = os.environ.get("FORMULAETL_DEMO", "1") == "1"
 
 app = FastAPI(
     title="FormulaETL API",
-    description="Open-source visual ETL — pipeline CRUD, run, logs, AI builder",
+    description="Open-source visual ETL — pipeline CRUD, run, logs, AI builder, scheduler",
     version="0.1.0",
 )
 
@@ -36,8 +37,10 @@ app.add_middleware(
 )
 
 pipelines = PipelineStore(WORK_DIR / "data" / "pipelines")
+schedules = ScheduleStore(WORK_DIR / "data" / "schedules")
 runs = RunStore()
 _runner_lock = threading.Lock()
+_scheduler: PipelineScheduler | None = None
 
 
 class PipelineCreate(BaseModel):
@@ -47,6 +50,12 @@ class PipelineCreate(BaseModel):
     edges: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     id: str | None = None
+
+
+class ScheduleUpdate(BaseModel):
+    enabled: bool = False
+    cron: str = "*/5 * * * *"
+    timezone: str = "UTC"
 
 
 class AIBuildRequest(BaseModel):
@@ -77,6 +86,8 @@ def _ensure_demo_loaded(*, refresh: bool = False) -> None:
         ("demos/db-to-file/pipeline.json", "demo-db-to-file"),
         ("demos/core-path/pipeline.json", "demo-core-path"),
         ("demos/python-row-flex/pipeline.json", "demo-python-row-flex"),
+        ("demos/api-kafka-databricks/pipeline.json", "demo-api-kafka-databricks"),
+        ("demos/s3-databricks/pipeline.json", "demo-s3-databricks"),
     ):
         demo_path = WORK_DIR / rel
         if not demo_path.exists():
@@ -88,12 +99,58 @@ def _ensure_demo_loaded(*, refresh: bool = False) -> None:
         pipelines.save(PipelineDefinition.model_validate(data))
 
 
+def _scheduled_run(pipeline_id: str) -> dict[str, Any]:
+    """Callback used by the Community scheduler poll loop."""
+    p = pipelines.get(pipeline_id)
+    if not p:
+        raise KeyError(f"Pipeline '{pipeline_id}' not found for schedule")
+    run_id = str(uuid.uuid4())
+    pending = RunResult(
+        run_id=run_id,
+        pipeline_id=pipeline_id,
+        status="running",
+        logs=[f"Scheduled run for pipeline '{p.name}'"],
+    )
+    runs.put(pending)
+    with _runner_lock:
+        _execute_run(run_id, p)
+    final = runs.get(run_id)
+    return {
+        "run_id": run_id,
+        "status": final.status if final else "unknown",
+        "pipeline_id": pipeline_id,
+    }
+
+
+def get_scheduler() -> PipelineScheduler:
+    global _scheduler
+    if _scheduler is None:
+        _scheduler = PipelineScheduler(
+            schedules,
+            _scheduled_run,
+            poll_interval_sec=float(os.environ.get("FORMULAETL_SCHEDULER_POLL", "5")),
+        )
+    return _scheduler
+
+
 @app.on_event("startup")
 def startup() -> None:
     pipelines.ensure()
+    schedules.ensure()
     _ensure_demo_loaded(refresh=True)
     # Drop legacy demo id so product UI never lists Talend-named pipelines
     pipelines.delete("demo-talend-core-path")
+    # Community self-hosted scheduler (in-process poll). HA / multi-node is Enterprise later.
+    if os.environ.get("FORMULAETL_SCHEDULER", "1") != "0":
+        get_scheduler().start()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    global _scheduler
+    if _scheduler is not None:
+        _scheduler.stop()
+        _scheduler = None
 
 
 @app.get("/health")
@@ -103,6 +160,7 @@ def health() -> dict[str, Any]:
         "demo_mode": DEMO_MODE,
         "version": "0.1.0",
         "work_dir": str(WORK_DIR),
+        "scheduler": os.environ.get("FORMULAETL_SCHEDULER", "1") != "0",
     }
 
 
@@ -268,3 +326,58 @@ def list_runs() -> list[dict[str, Any]]:
         }
         for r in runs.list()
     ]
+
+
+@app.get("/api/schedules")
+def list_schedules() -> list[dict[str, Any]]:
+    return [s.to_dict() for s in schedules.list()]
+
+
+@app.get("/api/pipelines/{pipeline_id}/schedule")
+def get_pipeline_schedule(pipeline_id: str) -> dict[str, Any]:
+    p = pipelines.get(pipeline_id)
+    if not p:
+        _ensure_demo_loaded()
+        p = pipelines.get(pipeline_id)
+    if not p:
+        raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+    spec = schedules.get(pipeline_id)
+    if not spec:
+        return {
+            "pipeline_id": pipeline_id,
+            "enabled": False,
+            "cron": "*/5 * * * *",
+            "timezone": "UTC",
+            "next_run_at": None,
+            "last_run_at": None,
+            "last_run_id": None,
+            "last_status": None,
+        }
+    return spec.to_dict()
+
+
+@app.put("/api/pipelines/{pipeline_id}/schedule")
+def put_pipeline_schedule(pipeline_id: str, body: ScheduleUpdate) -> dict[str, Any]:
+    p = pipelines.get(pipeline_id)
+    if not p:
+        _ensure_demo_loaded()
+        p = pipelines.get(pipeline_id)
+    if not p:
+        raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+    try:
+        spec = get_scheduler().upsert(
+            pipeline_id,
+            enabled=body.enabled,
+            cron=body.cron,
+            timezone=body.timezone or "UTC",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return spec.to_dict()
+
+
+@app.post("/api/scheduler/tick")
+def scheduler_tick() -> dict[str, Any]:
+    """Fire due schedules once (tests / manual). Community poller also calls this."""
+    fired = get_scheduler().tick()
+    return {"fired": fired, "count": len(fired)}

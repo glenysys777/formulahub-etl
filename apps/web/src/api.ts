@@ -66,6 +66,18 @@ export type SchemaDiscoverResult = {
   sample_rows?: Record<string, unknown>[];
 };
 
+export type PipelineSchedule = {
+  pipeline_id: string;
+  enabled: boolean;
+  cron: string;
+  timezone: string;
+  /** Epoch seconds — next scheduled fire (persisted by the API). */
+  next_run_at?: number | null;
+  last_run_at?: number | null;
+  last_run_id?: string | null;
+  last_status?: string | null;
+};
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
@@ -99,6 +111,16 @@ export const api = {
     req<SchemaDiscoverResult>("/api/schema/discover", {
       method: "POST",
       body: JSON.stringify({ component_type, config }),
+    }),
+  getSchedule: (pipelineId: string) =>
+    req<PipelineSchedule>(`/api/pipelines/${pipelineId}/schedule`),
+  putSchedule: (
+    pipelineId: string,
+    body: { enabled: boolean; cron: string; timezone: string },
+  ) =>
+    req<PipelineSchedule>(`/api/pipelines/${pipelineId}/schedule`, {
+      method: "PUT",
+      body: JSON.stringify(body),
     }),
 };
 

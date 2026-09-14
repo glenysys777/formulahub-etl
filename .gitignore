@@ -3,6 +3,7 @@ data/out/
 data/archive/
 data/rejects/
 data/pipelines/
+data/schedules/
 *.pyc
 __pycache__/
 .pytest_cache/

@@ -1,9 +1,10 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-/** Visual category → CSS class + accent */
+/** Visual category → CSS class + accent (distinct colors, original glyphs — no vendor logos) */
 const CATEGORY: Record<string, string> = {
   s3_source: "source",
   http_api_source: "source",
+  kafka_source: "stream",
   sftp_source: "source",
 
   local_file_source: "file",
@@ -19,6 +20,7 @@ const CATEGORY: Record<string, string> = {
   postgres_destination: "db",
   mysql_destination: "db",
   snowflake_destination: "db",
+  databricks_job: "orch",
 
   pgp_decrypt: "security",
   pgp_encrypt: "security",
@@ -43,85 +45,176 @@ const CATEGORY: Record<string, string> = {
   logger_metrics: "utility",
 };
 
-const CAT_ICON: Record<string, string> = {
-  source: "↓",
-  file: "📄",
-  db: "▣",
-  security: "🔐",
-  transform: "⟳",
-  quality: "✓",
-  destination: "↑",
-  utility: "⚙",
+export const CAT_COLORS: Record<string, string> = {
+  source: "#0071e3",
+  stream: "#ff375f",
+  file: "#0d9488",
+  db: "#5856d6",
+  orch: "#ff6b35",
+  security: "#af52de",
+  transform: "#ff9f0a",
+  quality: "#e6a800",
+  destination: "#34c759",
+  utility: "#8e8e93",
 };
 
-function Icon({ cat }: { cat: string }) {
-  if (cat === "source") {
+/** Original SVG glyphs per component (never vendor trademark logos). */
+export function ComponentGlyph({
+  type,
+  size = 16,
+}: {
+  type: string;
+  size?: number;
+}) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 16 16",
+    fill: "none" as const,
+    "aria-hidden": true as const,
+  };
+  // Bucket (S3-style object storage — geometric, not AWS logo)
+  if (type === "s3_source") {
     return (
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M8 2v9M4.5 8.5 8 12l3.5-3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M3 14h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <svg {...common}>
+        <path d="M2.5 5.5 8 2.5l5.5 3-5.5 3-5.5-3Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M2.5 5.5V11l5.5 2.5L13.5 11V5.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M8 8.5v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     );
   }
-  if (cat === "destination") {
+  // Bolt / stream (Kafka-style — not Confluent/Kafka logos)
+  if (type === "kafka_source") {
     return (
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M8 14V5M4.5 7.5 8 4l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M3 2h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <svg {...common}>
+        <path d="M9.2 1.8 4.2 8.2h3.2L6.8 14.2l5-6.4H8.6L9.2 1.8Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
       </svg>
     );
   }
-  if (cat === "file") {
+  // Globe / API
+  if (type === "http_api_source") {
     return (
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M4 2.5h5.5L12 5v8.5H4V2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="M9.5 2.5V5H12" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <svg {...common}>
+        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M2.5 8h11M8 2.5c1.8 1.8 1.8 9.2 0 11M8 2.5c-1.8 1.8-1.8 9.2 0 11" stroke="currentColor" strokeWidth="1.25" />
       </svg>
     );
   }
-  if (cat === "db") {
+  // Table / spark job trigger (Databricks orchestration — geometric table+play, not vendor mark)
+  if (type === "databricks_job") {
     return (
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden>
+      <svg {...common}>
+        <rect x="2" y="3" width="12" height="10" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M2 6.5h12M6.5 3v10M9.5 3v10" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M11.2 9.2 13.5 10.5 11.2 11.8V9.2Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  // Lock
+  if (type === "pgp_decrypt" || type === "pgp_encrypt") {
+    return (
+      <svg {...common}>
+        <rect x="3.5" y="7" width="9" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="8" cy="10.5" r="1" fill="currentColor" />
+      </svg>
+    );
+  }
+  // Cylinder DB
+  if (
+    type.includes("postgres") ||
+    type.includes("mysql") ||
+    type.includes("sqlite") ||
+    type.includes("snowflake")
+  ) {
+    return (
+      <svg {...common}>
         <ellipse cx="8" cy="4" rx="5" ry="2" stroke="currentColor" strokeWidth="1.4" />
         <path d="M3 4v4c0 1.1 2.2 2 5 2s5-.9 5-2V4" stroke="currentColor" strokeWidth="1.4" />
         <path d="M3 8v4c0 1.1 2.2 2 5 2s5-.9 5-2V8" stroke="currentColor" strokeWidth="1.4" />
       </svg>
     );
   }
-  if (cat === "security") {
+  // File
+  if (type.includes("file") || type.includes("excel") || type === "archive_files") {
     return (
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden>
-        <rect x="3.5" y="7" width="9" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <svg {...common}>
+        <path d="M4 2.5h5.5L12 5v8.5H4V2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M9.5 2.5V5H12M6 8h4M6 10.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     );
   }
-  if (cat === "transform") {
+  // Download arrow (generic source)
+  if (type.endsWith("_source") || type.includes("sftp_source")) {
     return (
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M3 5h7.5M10.5 5l-2-2M10.5 5l-2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M13 11H5.5M5.5 11l2-2M5.5 11l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <svg {...common}>
+        <path d="M8 2v9M4.5 8.5 8 12l3.5-3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3 14h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
     );
   }
-  if (cat === "quality") {
+  // Upload (destination)
+  if (type.endsWith("_destination") || type.includes("sftp_destination")) {
     return (
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden>
+      <svg {...common}>
+        <path d="M8 14V5M4.5 7.5 8 4l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3 2h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  // Check quality
+  if (type === "schema_validate") {
+    return (
+      <svg {...common}>
         <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" />
         <path d="M5.5 8.2 7.2 10l3.5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   }
+  // Transform arrows
+  if (
+    type === "tmap" ||
+    type === "column_map" ||
+    type === "transform" ||
+    type.includes("parser") ||
+    type === "filter" ||
+    type === "sort" ||
+    type === "aggregate" ||
+    type === "dedupe" ||
+    type === "lookup_join" ||
+    type === "python_row"
+  ) {
+    return (
+      <svg {...common}>
+        <path d="M3 5h7.5M10.5 5l-2-2M10.5 5l-2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M13 11H5.5M5.5 11l2-2M5.5 11l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  // Gear utility
   return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg {...common}>
       <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M8 2.5v1.8M8 11.7v1.8M2.5 8h1.8M11.7 8h1.8M4.1 4.1l1.3 1.3M10.6 10.6l1.3 1.3M11.9 4.1l-1.3 1.3M5.4 10.6l-1.3 1.3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path
+        d="M8 2.5v1.8M8 11.7v1.8M2.5 8h1.8M11.7 8h1.8M4.1 4.1l1.3 1.3M10.6 10.6l1.3 1.3M11.9 4.1l-1.3 1.3M5.4 10.6l-1.3 1.3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
 
+export function categoryForType(type: string): string {
+  return CATEGORY[type] || "utility";
+}
+
 function summary(type: string, config: Record<string, unknown>): string {
   if (type === "s3_source") return `s3://${config.bucket}/${config.key}`;
+  if (type === "kafka_source")
+    return `${config.topic || "topic"} @ ${config.brokers || "brokers"}`;
+  if (type === "databricks_job")
+    return `job ${config.job_id || "?"} · ${config.workspace_host || "host"}`;
   if (type === "local_file_source") return String(config.path || "");
   if (type === "http_api_source") return String(config.url || "HTTP API");
   if (type === "excel_source")
@@ -166,7 +259,7 @@ function summary(type: string, config: Record<string, unknown>): string {
     const an = Array.isArray(a) ? a.length : a ? 1 : 0;
     return `group ${gs} · ${an} aggs`;
   }
-  if (type === "python_row") return `${config.mode || "row"} · Python (not Java)`;
+  if (type === "python_row") return `${config.mode || "row"} · Python`;
   if (type === "lookup_join") return String(config.how || "left") + " join";
   if (type === "pgp_decrypt") return String(config.private_key_path || "private key");
   if (type === "pgp_encrypt") return String(config.public_key_path || "public key");
@@ -194,16 +287,7 @@ export type EtlNodeData = {
   runVisual?: RunVisual;
 };
 
-const HANDLE_COLORS: Record<string, string> = {
-  source: "#0071e3",
-  file: "#0d9488",
-  db: "#5856d6",
-  security: "#af52de",
-  transform: "#ff9f0a",
-  quality: "#ffd60a",
-  destination: "#34c759",
-  utility: "#8e8e93",
-};
+const HANDLE_COLORS: Record<string, string> = { ...CAT_COLORS };
 
 function friendlyLabel(type: string, label: string): string {
   const lower = (label || "").toLowerCase();
@@ -212,12 +296,14 @@ function friendlyLabel(type: string, label: string): string {
     return label;
   }
   if (type === "column_map" && (lower === "column map" || lower === "tmap" || !label)) return "Schema Map";
+  if (type === "kafka_source") return label || "Kafka Source";
+  if (type === "databricks_job") return label || "Databricks Job";
   return label || type;
 }
 
 export function EtlNode({ data, selected }: NodeProps) {
   const d = data as EtlNodeData;
-  const cat = CATEGORY[d.componentType] || "utility";
+  const cat = categoryForType(d.componentType);
   const accent = HANDLE_COLORS[cat] || HANDLE_COLORS.utility;
   const hasRejects =
     d.componentType === "schema_validate" ||
@@ -249,14 +335,10 @@ export function EtlNode({ data, selected }: NodeProps) {
           ↺
         </span>
       )}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{ background: "#aeaeb2" }}
-      />
+      <Handle type="target" position={Position.Left} style={{ background: "#aeaeb2" }} />
       <div className="etl-node-header">
-        <span className="etl-node-icon" title={CAT_ICON[cat]}>
-          <Icon cat={cat} />
+        <span className="etl-node-icon" title={d.componentType}>
+          <ComponentGlyph type={d.componentType} />
         </span>
         <span className="etl-node-title">{title}</span>
       </div>

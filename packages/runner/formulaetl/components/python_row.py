@@ -94,7 +94,7 @@ class PythonRow(BaseComponent):
             },
             "code": {
                 "type": "string",
-                "description": "Python script (NOT Java). Mutate row / rows in place or assign result.",
+                "description": "Sandboxed Python script. Mutate row / rows in place or assign result.",
             },
             "input_var": {
                 "type": "string",
@@ -119,7 +119,7 @@ class PythonRow(BaseComponent):
             "type": "secret",
             "required": True,
             "help": (
-                "Python (not Java / not tJavaRow). Restricted sandbox: only row/rows + safe builtins. "
+                "Sandboxed Python per row/batch — only row/rows + safe builtins. "
                 "No open/network/os. Example: row['total'] = float(row.get('amount') or 0) * 1.1"
             ),
             "placeholder": "row['flag'] = 'ok'",
@@ -180,7 +180,7 @@ class PythonRow(BaseComponent):
             metrics.rows_out = len(out)
             ctx.emit(
                 f"PythonRow [{mode}]: {len(rows)} → {len(out)} "
-                f"(sandbox Python — not Java/tJavaRow)"
+                f"(sandboxed Python)"
             )
 
         return ComponentResult(rows=out, metrics=metrics)
