@@ -324,7 +324,7 @@ def startup() -> None:
     runs.ensure()
     connections.ensure()
     _ensure_demo_loaded(refresh=True)
-    # Drop legacy demo id so product UI never lists Talend-named pipelines
+    # Drop legacy demo id so product UI never lists competitor-named pipelines
     pipelines.delete("demo-talend-core-path")
     if os.environ.get("FORMULAETL_SCHEDULER", "1") != "0":
         get_scheduler().start()
@@ -370,7 +370,7 @@ def api_components() -> list[dict[str, Any]]:
 
 @app.post("/api/schema/discover")
 def schema_discover(body: SchemaDiscoverRequest) -> dict[str, Any]:
-    """Infer columns + types from a source connection/sample (Talend-like schema)."""
+    """Infer columns + types from a source connection/sample."""
     from formulaetl.schema.discover import discover
     from formulaetl.sdk.connections import resolve_node_config
 

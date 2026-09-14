@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
 /** Visual category → CSS class + accent (distinct colors, original glyphs — no vendor logos) */
@@ -333,7 +334,7 @@ function friendlyLabel(type: string, label: string): string {
   return label || type;
 }
 
-export function EtlNode({ data, selected }: NodeProps) {
+export const EtlNode = memo(function EtlNode({ data, selected }: NodeProps) {
   const d = data as EtlNodeData;
   const cat = categoryForType(d.componentType);
   const accent = HANDLE_COLORS[cat] || HANDLE_COLORS.utility;
@@ -344,6 +345,10 @@ export function EtlNode({ data, selected }: NodeProps) {
   const title = friendlyLabel(d.componentType, d.label);
   const isMapper = d.componentType === "tmap" || d.componentType === "column_map";
   const isLookup = d.componentType === "lookup_join";
+  const bodySummary = useMemo(
+    () => summary(d.componentType, d.config),
+    [d.componentType, d.config],
+  );
 
   return (
     <div
@@ -356,7 +361,7 @@ export function EtlNode({ data, selected }: NodeProps) {
             : undefined
       }
     >
-      {runVisual === "running" && <span className="etl-progress-ring" aria-hidden />}
+      {runVisual === "running" && selected && <span className="etl-progress-ring" aria-hidden />}
       {runVisual === "success" && (
         <span className="etl-run-badge ok" title="Completed" aria-hidden>
           <svg viewBox="0 0 16 16" fill="none">
@@ -400,8 +405,8 @@ export function EtlNode({ data, selected }: NodeProps) {
         </span>
         <span className="etl-node-title">{title}</span>
       </div>
-      <div className="etl-node-body" title={summary(d.componentType, d.config)}>
-        {summary(d.componentType, d.config)}
+      <div className="etl-node-body" title={bodySummary}>
+        {bodySummary}
       </div>
       <Handle
         type="source"
@@ -419,4 +424,4 @@ export function EtlNode({ data, selected }: NodeProps) {
       )}
     </div>
   );
-}
+});

@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-DEFAULT_BATCH_SIZE = int(os.environ.get("FORMULAETL_BATCH_SIZE", "1024") or "1024")
+# Larger default batches cut per-batch Python overhead on the wedge path.
+# Override with FORMULAETL_BATCH_SIZE. See docs/PERFORMANCE.md.
+DEFAULT_BATCH_SIZE = int(os.environ.get("FORMULAETL_BATCH_SIZE", "32768") or "32768")
 
 MalformedPolicy = Literal["fail", "skip", "reject"]
 ExtraColumnsPolicy = Literal["keep", "drop", "reject"]
@@ -282,11 +284,39 @@ class DatasetHandle:
 
         return cls(producer=producer, batch_size=batch_size)
 
+    @classmethod
+    def from_jsonl_path(
+        cls,
+        path: str | Path,
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        row_count: int | None = None,
+    ) -> DatasetHandle:
+        """Stream a JSONL spill file as ``RowBatch``es (re-readable, bounded RAM)."""
+        file_path = Path(path)
+
+        def producer(bs: int) -> Iterator[RowBatch]:
+            from formulaetl.sdk.spill import iter_jsonl_batches
+
+            yield from iter_jsonl_batches(file_path, batch_size=bs)
+
+        return cls(producer=producer, batch_size=batch_size, row_count=row_count)
+
     @property
     def row_count(self) -> int | None:
         return self._row_count
 
+    @property
+    def is_materialized(self) -> bool:
+        return self._materialized is not None
+
     def iter_batches(self, batch_size: int | None = None) -> Iterator[RowBatch]:
+        """Yield bounded batches. Does **not** cache producer output into RAM.
+
+        Call ``materialize()`` explicitly when a full ``list[dict]`` is required.
+        Producer-backed handles re-run the producer on each iteration (CSV path
+        re-read, JSONL spill re-read).
+        """
         bs = max(1, int(batch_size or self.batch_size))
         if self._materialized is not None:
             yield from _chunk_rows(self._materialized, bs)
@@ -294,27 +324,38 @@ class DatasetHandle:
         if self._producer is None:
             yield RowBatch(rows=[], batch_index=0, eof=True)
             return
-        acc: list[dict[str, Any]] = []
         last: RowBatch | None = None
+        n = 0
         for batch in self._producer(bs):
-            acc.extend(batch.rows)
+            n += len(batch.rows)
             last = batch
             yield batch
         if last is None:
             yield RowBatch(rows=[], batch_index=0, eof=True)
-        self._materialized = acc
-        self._row_count = len(acc)
+            n = 0
+        if self._row_count is None:
+            self._row_count = n
 
     def materialize(self) -> list[dict[str, Any]]:
-        """Adapter: full ``list[dict]`` for legacy ``run(ctx, rows)`` components."""
+        """Adapter: full ``list[dict]`` for legacy ``run(ctx, rows)`` components.
+
+        Prefer iterating ``iter_batches`` / spill handles for large data.
+        """
         if self._materialized is not None:
             return self._materialized
         acc: list[dict[str, Any]] = []
         for batch in self.iter_batches():
             acc.extend(batch.rows)
         self._materialized = acc
+        self._rows = acc
         self._row_count = len(acc)
         return acc
+
+    def release_materialized(self) -> None:
+        """Drop cached list[dict] so GC can reclaim (producer/spill remains)."""
+        if self._producer is not None:
+            self._materialized = None
+            self._rows = None
 
 
 def _chunk_rows(rows: list[dict[str, Any]], batch_size: int) -> Iterator[RowBatch]:

@@ -8,6 +8,7 @@ live in pipeline JSON.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,50 @@ from formulaetl.sdk.registry import register
 
 # Below this size we still attach a short content preview for tiny demo fixtures.
 _CONTENT_PREVIEW_MAX = 64 * 1024
+
+
+def _gpg_decrypt_file(
+    src: Path,
+    key_path: Path,
+    passphrase: str,
+    dest: Path,
+) -> None:
+    """File-to-file decrypt via gpg (bounded RAM). Raises on failure."""
+    import subprocess
+    import tempfile
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="formulaetl-gnupg-") as home:
+        env = {**os.environ, "GNUPGHOME": home}
+        imported = subprocess.run(
+            ["gpg", "--batch", "--yes", "--import", str(key_path)],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if imported.returncode != 0:
+            raise RuntimeError(imported.stderr or imported.stdout or "gpg import failed")
+        decrypted = subprocess.run(
+            [
+                "gpg",
+                "--batch",
+                "--yes",
+                "--pinentry-mode",
+                "loopback",
+                "--passphrase-fd",
+                "0",
+                "--output",
+                str(dest),
+                "--decrypt",
+                str(src),
+            ],
+            env=env,
+            input=(passphrase or "") + "\n",
+            capture_output=True,
+            text=True,
+        )
+        if decrypted.returncode != 0:
+            raise RuntimeError(decrypted.stderr or decrypted.stdout or "gpg decrypt failed")
 
 
 def _resolve_private_key_path(ctx: RunContext, config: dict[str, Any]) -> Path:
@@ -117,53 +162,10 @@ class PGPDecrypt(BaseComponent):
     def run(self, ctx: RunContext, rows: list[dict[str, Any]] | None = None) -> ComponentResult:
         metrics = Metrics()
         with timed(metrics):
-            import pgpy
-            from pgpy.errors import PGPError
+            import shutil
 
             key_path = _resolve_private_key_path(ctx, self.config)
             passphrase = _resolve_passphrase(self.config)
-
-            try:
-                key, _ = pgpy.PGPKey.from_blob(key_path.read_text())
-            except Exception as exc:
-                raise ValueError(
-                    f"PGPDecrypt: cannot load private key from {key_path}: "
-                    f"{redact_secrets(str(exc))}"
-                ) from exc
-
-            raw, src_path = _load_ciphertext(ctx, self.config)
-            metrics.rows_in = 1
-
-            try:
-                msg = pgpy.PGPMessage.from_blob(raw)
-            except Exception as exc:
-                raise ValueError(
-                    f"PGPDecrypt: corrupt or non-PGP input"
-                    f"{f' ({src_path})' if src_path else ''}: {redact_secrets(str(exc))}"
-                ) from exc
-
-            try:
-                if key.is_protected:
-                    with key.unlock(passphrase):
-                        decrypted = key.decrypt(msg)
-                else:
-                    decrypted = key.decrypt(msg)
-            except PGPError as exc:
-                raise ValueError(
-                    "PGPDecrypt: decryption failed (wrong key, wrong passphrase, "
-                    f"or message not encrypted to this key): {redact_secrets(str(exc))}"
-                ) from exc
-            except Exception as exc:
-                # Never include passphrase in the message
-                raise ValueError(
-                    f"PGPDecrypt: decryption failed: {redact_secrets(str(exc))}"
-                ) from exc
-
-            plaintext = decrypted.message
-            if isinstance(plaintext, str):
-                out_bytes = plaintext.encode("utf-8")
-            else:
-                out_bytes = bytes(plaintext)
 
             temp = True
             if self.config.get("output_path"):
@@ -171,26 +173,115 @@ class PGPDecrypt(BaseComponent):
                 temp = False
             else:
                 out_path = ctx.temp_dir() / "pgp_decrypt.out"
-            handle = write_bytes_artifact(out_path, out_bytes, temp=temp)
 
-            ctx.emit(
-                f"PGPDecrypt: decrypted {len(raw)} → {len(out_bytes)} bytes → {out_path}"
-            )
-            metrics.rows_out = 1
+            # Prefer path-to-path gpg for large files (no Python ciphertext blob).
+            src_path: Path | None = None
+            input_path = self.config.get("input_path") or self.config.get("path")
+            if input_path:
+                ip = ctx.resolve(str(input_path))
+                if ip.exists():
+                    src_path = ip
+            if src_path is None:
+                art = ctx.variables.get("upstream_artifact")
+                if isinstance(art, dict) and art.get("path") and Path(art["path"]).exists():
+                    src_path = Path(art["path"])
+            if src_path is None and ctx.variables.get("upstream_path"):
+                p = Path(ctx.variables["upstream_path"])
+                if p.exists():
+                    src_path = p
 
-            artifacts: dict[str, Any] = {
-                "path": str(out_path),
-                "artifact": handle.to_dict(),
-            }
-            # Tiny demo fixtures may expose content for unit tests; large files stay path-only.
-            if len(out_bytes) <= _CONTENT_PREVIEW_MAX and len(raw) <= _CONTENT_PREVIEW_MAX:
+            used_gpg = False
+            n_raw = src_path.stat().st_size if src_path and src_path.exists() else 0
+            if (
+                src_path is not None
+                and n_raw > _CONTENT_PREVIEW_MAX
+                and shutil.which("gpg")
+            ):
                 try:
-                    artifacts["content"] = out_bytes.decode("utf-8")
-                except UnicodeDecodeError:
-                    artifacts["content"] = out_bytes.decode("utf-8", errors="replace")
+                    _gpg_decrypt_file(src_path, key_path, passphrase, out_path)
+                    used_gpg = True
+                except Exception as exc:
+                    ctx.emit(
+                        f"PGPDecrypt: gpg path-to-path failed, falling back to pgpy "
+                        f"({redact_secrets(str(exc))[:180]})"
+                    )
+
+            if used_gpg:
+                n_out = out_path.stat().st_size if out_path.exists() else 0
+                handle = ArtifactHandle.from_path(out_path, temp=temp, checksum=False)
+                ctx.emit(
+                    f"PGPDecrypt: decrypted {n_raw} → {n_out} bytes → {out_path} (gpg)"
+                )
+                metrics.rows_in = 1
+                metrics.rows_out = 1
+                metrics.extras["crypto"] = "gpg"
+                artifacts = {
+                    "path": str(out_path),
+                    "artifact": handle.to_dict(),
+                }
+            else:
+                import pgpy
+                from pgpy.errors import PGPError
+
+                try:
+                    key, _ = pgpy.PGPKey.from_blob(key_path.read_text())
+                except Exception as exc:
+                    raise ValueError(
+                        f"PGPDecrypt: cannot load private key from {key_path}: "
+                        f"{redact_secrets(str(exc))}"
+                    ) from exc
+
+                raw, src_path2 = _load_ciphertext(ctx, self.config)
+                metrics.rows_in = 1
+
+                try:
+                    msg = pgpy.PGPMessage.from_blob(raw)
+                except Exception as exc:
+                    raise ValueError(
+                        f"PGPDecrypt: corrupt or non-PGP input"
+                        f"{f' ({src_path2})' if src_path2 else ''}: {redact_secrets(str(exc))}"
+                    ) from exc
+
+                try:
+                    if key.is_protected:
+                        with key.unlock(passphrase):
+                            decrypted = key.decrypt(msg)
+                    else:
+                        decrypted = key.decrypt(msg)
+                except PGPError as exc:
+                    raise ValueError(
+                        "PGPDecrypt: decryption failed (wrong key, wrong passphrase, "
+                        f"or message not encrypted to this key): {redact_secrets(str(exc))}"
+                    ) from exc
+                except Exception as exc:
+                    raise ValueError(
+                        f"PGPDecrypt: decryption failed: {redact_secrets(str(exc))}"
+                    ) from exc
+
+                plaintext = decrypted.message
+                if isinstance(plaintext, str):
+                    out_bytes = plaintext.encode("utf-8")
+                else:
+                    out_bytes = bytes(plaintext)
+
+                handle = write_bytes_artifact(out_path, out_bytes, temp=temp)
+                n_raw, n_out = len(raw), len(out_bytes)
+                ctx.emit(
+                    f"PGPDecrypt: decrypted {n_raw} → {n_out} bytes → {out_path}"
+                )
+                metrics.rows_out = 1
+                artifacts = {
+                    "path": str(out_path),
+                    "artifact": handle.to_dict(),
+                }
+                if n_out <= _CONTENT_PREVIEW_MAX and n_raw <= _CONTENT_PREVIEW_MAX:
+                    try:
+                        artifacts["content"] = out_bytes.decode("utf-8")
+                    except UnicodeDecodeError:
+                        artifacts["content"] = out_bytes.decode("utf-8", errors="replace")
 
         return ComponentResult(
-            rows=[{"_decrypted_size": len(out_bytes)}],
+            rows=[{"_decrypted_size": n_out}],
             metrics=metrics,
             artifacts=artifacts,
             artifact=handle,

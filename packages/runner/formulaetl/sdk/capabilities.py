@@ -82,3 +82,21 @@ TABULAR_FROM_FILE = ComponentCapabilities(
     requires_materialization=False,
     io_kind="mixed",
 )
+
+# Destinations that append per RowBatch and do not echo the full row set.
+STREAMING_SINK = ComponentCapabilities(
+    streaming=True,
+    blocking=False,
+    supports_batch=True,
+    requires_materialization=False,
+    io_kind="rows",
+)
+
+# Stateful row-wise (e.g. dedupe keep=first): same component instance across batches.
+STREAMING_STATEFUL = ComponentCapabilities(
+    streaming=True,
+    blocking=False,
+    supports_batch=True,
+    requires_materialization=False,
+    io_kind="rows",
+)

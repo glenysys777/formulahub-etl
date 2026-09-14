@@ -87,6 +87,17 @@ class ColumnMap(BaseComponent):
             rows = rows or []
             mappings = _parse_mappings(self.config.get("mappings"))
             drop_unmapped = bool(self.config.get("drop_unmapped", False))
+
+            # Identity rename with no drop: do not clone every row dict.
+            if mappings and not drop_unmapped and all(old == new for old, new in mappings):
+                metrics.rows_in = len(rows)
+                metrics.rows_out = len(rows)
+                ctx.emit(
+                    f"ColumnMap: identity mappings ({len(mappings)}) — passthrough "
+                    f"{len(rows)} rows"
+                )
+                return ComponentResult(rows=rows, metrics=metrics)
+
             targets = {new for _, new in mappings}
 
             out: list[dict[str, Any]] = []
@@ -96,7 +107,6 @@ class ColumnMap(BaseComponent):
                     if old in new_row:
                         new_row[new] = new_row.pop(old)
                     elif new not in new_row and old not in new_row:
-                        # source missing — leave as-is
                         pass
                 if drop_unmapped:
                     new_row = {k: v for k, v in new_row.items() if k in targets}

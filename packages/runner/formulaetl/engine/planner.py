@@ -77,7 +77,19 @@ def decide_feed(
     ):
         return "artifact", f"file hop (io_kind={caps.io_kind}, upstream={upstream_kind})"
 
+    # Fan-out used to force full materialization so every edge could replay
+    # list[dict]. Spill-backed DatasetHandle makes batches replayable too.
     if outbound > 1:
+        if (
+            caps.supports_batch
+            and caps.streaming
+            and not caps.requires_materialization
+            and not caps.blocking
+        ):
+            return (
+                "batches",
+                "fan-out with spill-backed RowBatch replay",
+            )
         return (
             "materialized_rows",
             "fan-out: output must be replayable for multiple edges",

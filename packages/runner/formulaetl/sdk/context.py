@@ -42,6 +42,8 @@ class ComponentResult:
     # the runner wraps ``rows`` / ``artifacts["path"]`` via the adapter.
     dataset: DatasetHandle | None = None
     artifact: ArtifactHandle | None = None
+    # Spill-backed named streams (fan-out without full list[dict] in RAM).
+    stream_datasets: dict[str, "DatasetHandle"] = field(default_factory=dict)
 
 
 LogFn = Callable[[str], None]
@@ -58,7 +60,7 @@ class RunContext:
     data_dir: Path = field(default_factory=lambda: Path("./data"))
     variables: dict[str, Any] = field(default_factory=dict)
     log: LogFn = field(default=lambda msg: print(msg))
-    batch_size: int = 1024
+    batch_size: int = 16384
     _node_metrics: dict[str, Metrics] = field(default_factory=dict)
     # Phase F: optional connection + secret resolution (set by PipelineRunner)
     secret_provider: Any | None = None

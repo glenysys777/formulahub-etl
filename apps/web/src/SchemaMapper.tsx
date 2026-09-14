@@ -711,7 +711,14 @@ export function SchemaMapper({
 
   useEffect(() => {
     if (!open) return;
-    const onResize = () => recomputePaths();
+    let raf = 0;
+    const onResize = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        recomputePaths();
+      });
+    };
     window.addEventListener("resize", onResize);
     const srcPane = sourcePaneRef.current;
     const varPane = varPaneRef.current;
@@ -720,14 +727,13 @@ export function SchemaMapper({
     varPane?.addEventListener("scroll", onResize, { passive: true });
     tgtPane?.addEventListener("scroll", onResize, { passive: true });
     const t = window.setTimeout(recomputePaths, 50);
-    const t2 = window.setTimeout(recomputePaths, 200);
     return () => {
       window.removeEventListener("resize", onResize);
       srcPane?.removeEventListener("scroll", onResize);
       varPane?.removeEventListener("scroll", onResize);
       tgtPane?.removeEventListener("scroll", onResize);
       window.clearTimeout(t);
-      window.clearTimeout(t2);
+      if (raf) window.cancelAnimationFrame(raf);
     };
   }, [open, recomputePaths]);
 

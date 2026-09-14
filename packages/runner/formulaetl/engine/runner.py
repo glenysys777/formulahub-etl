@@ -1,8 +1,8 @@
 """DAG pipeline runner.
 
 Honesty (not a production data plane): nodes still run sequentially in one
-process. Phase B adds DatasetHandle / ArtifactHandle and a planner that feeds
-row-wise nodes bounded ``RowBatch``es and file hops via on-disk handles.
+process. DatasetHandle / ArtifactHandle feed row-wise nodes bounded
+``RowBatch``es; large intermediates spill to JSONL under the run temp dir.
 Legacy ``run(ctx, list[dict])`` components keep working through the adapter.
 Default ``FORMULAETL_DEMO=1`` is fixture/mock mode.
 """
@@ -24,7 +24,7 @@ from formulaetl.sdk.adapter import (
     run_batched,
     run_legacy,
 )
-from formulaetl.sdk.context import ComponentResult, RunContext
+from formulaetl.sdk.context import ComponentResult
 from formulaetl.sdk.data import ArtifactHandle, DatasetHandle, DEFAULT_BATCH_SIZE
 from formulaetl.sdk.registry import create_component
 
@@ -86,6 +86,8 @@ class PipelineRunner:
 
             secret_provider = EnvSecretProvider()
 
+        from formulaetl.sdk.context import RunContext
+
         ctx = RunContext(
             run_id=run_id,
             pipeline_id=pipeline.id,
@@ -119,6 +121,8 @@ class PipelineRunner:
         exec_plan: ExecutionPlan | None = None
         node_outputs: dict[str, ComponentResult] = {}
         temp_handles: list[ArtifactHandle] = []
+        # Track remaining downstream consumers so we can free row lists early.
+        remaining_consumers: dict[str, int] = {}
 
         try:
             order = pipeline.topological_order()
@@ -127,6 +131,7 @@ class PipelineRunner:
             inbound: dict[str, list] = {n.id: [] for n in pipeline.nodes}
             for e in pipeline.edges:
                 inbound[e.target].append(e)
+                remaining_consumers[e.source] = remaining_consumers.get(e.source, 0) + 1
 
             exec_plan = plan_pipeline(pipeline, batch_size=self.batch_size)
             result.plan = exec_plan.to_dict()
@@ -191,6 +196,17 @@ class PipelineRunner:
 
                 _remember_source_path(ctx, node.type, cres)
 
+                # Drop large in-RAM lists from upstream once all consumers finished.
+                for e in inbound[nid]:
+                    remaining_consumers[e.source] = remaining_consumers.get(e.source, 1) - 1
+                    if remaining_consumers[e.source] <= 0:
+                        _release_result_rows(node_outputs[e.source])
+                        # After a sink pulls a lazy chain, harvest finalized metrics.
+                        from formulaetl.sdk.adapter import harvest_lazy_metrics
+
+                        harvest_lazy_metrics(node_outputs[e.source])
+                        ctx.record_metrics(e.source, node_outputs[e.source].metrics)
+
                 total_in += cres.metrics.rows_in
                 total_out += cres.metrics.rows_out
                 total_rej += cres.metrics.rows_rejected
@@ -199,6 +215,17 @@ class PipelineRunner:
                     f"out={cres.metrics.rows_out} rejected={cres.metrics.rows_rejected} "
                     f"feed={nplan.feed} ({cres.metrics.duration_ms:.1f}ms)"
                 )
+
+            # Final harvest for any lazy nodes still pending (e.g. last sink).
+            from formulaetl.sdk.adapter import harvest_lazy_metrics
+
+            for nid, o in node_outputs.items():
+                harvest_lazy_metrics(o)
+                ctx.record_metrics(nid, o.metrics)
+
+            total_in = sum(o.metrics.rows_in for o in node_outputs.values())
+            total_out = sum(o.metrics.rows_out for o in node_outputs.values())
+            total_rej = sum(o.metrics.rows_rejected for o in node_outputs.values())
 
             result.status = "success"
             result.metrics = {
@@ -252,11 +279,47 @@ class PipelineRunner:
         return result
 
 
+def _release_result_rows(cres: ComponentResult) -> None:
+    """Free list[dict] payloads when a spill/dataset remains for replay."""
+    if cres.dataset is not None and not cres.rows:
+        return
+    if cres.dataset is not None or cres.stream_datasets:
+        cres.rows = []
+        cres.rejects = []
+        cres.streams = {}
+        if cres.dataset is not None:
+            cres.dataset.release_materialized()
+
+
+def _port_dataset(
+    up: ComponentResult,
+    handle: str,
+    batch_size: int,
+) -> tuple[DatasetHandle, list[dict[str, Any]] | None]:
+    """Resolve a named output port to a DatasetHandle without forcing full lists."""
+    if handle in up.stream_datasets:
+        return up.stream_datasets[handle], None
+    if handle == "rejects":
+        if up.rejects:
+            return DatasetHandle.from_rows(list(up.rejects), batch_size), list(up.rejects)
+        if "rejects" in up.streams:
+            chunk = list(up.streams["rejects"])
+            return DatasetHandle.from_rows(chunk, batch_size), chunk
+        return DatasetHandle.from_rows([], batch_size), []
+    if handle == "out" or handle not in up.streams:
+        if up.dataset is not None:
+            return up.dataset, (list(up.rows) if up.rows else None)
+        chunk = list(up.rows)
+        return DatasetHandle.from_rows(chunk, batch_size), chunk
+    chunk = list(up.streams[handle])
+    return DatasetHandle.from_rows(chunk, batch_size), chunk
+
+
 def _gather_inputs(
     nid: str,
     inbound: dict[str, list],
     node_outputs: dict[str, ComponentResult],
-    ctx: RunContext,
+    ctx: Any,
     batch_size: int,
 ) -> tuple[DatasetHandle | None, list[dict[str, Any]] | None, dict[str, Any], ArtifactHandle | None]:
     edges_in = inbound[nid]
@@ -264,8 +327,9 @@ def _gather_inputs(
         ctx.variables.pop("_input_streams", None)
         return None, None, {}, None
 
-    input_rows: list[dict[str, Any]] = []
+    input_rows: list[dict[str, Any]] | None = None
     input_streams: dict[str, list[dict[str, Any]]] = {}
+    input_stream_datasets: dict[str, DatasetHandle] = {}
     upstream_artifacts: dict[str, Any] = {}
     upstream_handle: ArtifactHandle | None = None
     passthrough_dataset: DatasetHandle | None = None
@@ -273,42 +337,45 @@ def _gather_inputs(
     for e in edges_in:
         up = node_outputs[e.source]
         handle = e.sourceHandle or "out"
-        if handle == "rejects" and up.rejects:
-            chunk = list(up.rejects)
-            chunk_ds = DatasetHandle.from_rows(chunk, batch_size)
-        elif handle in up.streams:
-            chunk = list(up.streams[handle])
-            chunk_ds = DatasetHandle.from_rows(chunk, batch_size)
-        else:
-            chunk = list(up.rows)
-            chunk_ds = up.dataset if up.dataset is not None else DatasetHandle.from_rows(chunk, batch_size)
+        chunk_ds, chunk_rows = _port_dataset(up, handle, batch_size)
         target_port = e.targetHandle or "in"
-        input_streams.setdefault(target_port, []).extend(chunk)
-        input_rows.extend(chunk)
+        input_stream_datasets[target_port] = chunk_ds
+        if chunk_rows is not None:
+            input_streams.setdefault(target_port, []).extend(chunk_rows)
         upstream_artifacts.update(up.artifacts)
         if up.artifact is not None:
             upstream_handle = up.artifact
         if len(edges_in) == 1 and handle not in ("rejects",) and handle not in up.streams:
             passthrough_dataset = chunk_ds
+            input_rows = chunk_rows
 
-    if any(p != "in" for p in input_streams) or len(input_streams) > 1:
-        ctx.variables["_input_streams"] = input_streams
+    if any(p != "in" for p in input_stream_datasets) or len(input_stream_datasets) > 1:
+        # Multi-port joins still need list adapters for legacy components.
+        materialized_streams: dict[str, list[dict[str, Any]]] = {}
+        for port, ds in input_stream_datasets.items():
+            if port in input_streams:
+                materialized_streams[port] = input_streams[port]
+            else:
+                materialized_streams[port] = ds.materialize()
+        ctx.variables["_input_streams"] = materialized_streams
         for pref in ("left", "main", "in"):
-            if pref in input_streams:
-                input_rows = list(input_streams[pref])
-                passthrough_dataset = DatasetHandle.from_rows(input_rows, batch_size)
+            if pref in input_stream_datasets:
+                passthrough_dataset = input_stream_datasets[pref]
+                input_rows = materialized_streams.get(pref)
                 break
     else:
         ctx.variables.pop("_input_streams", None)
+        if passthrough_dataset is None and input_stream_datasets:
+            passthrough_dataset = next(iter(input_stream_datasets.values()))
 
     if passthrough_dataset is None:
-        passthrough_dataset = DatasetHandle.from_rows(input_rows, batch_size)
+        passthrough_dataset = DatasetHandle.from_rows(input_rows or [], batch_size)
     return passthrough_dataset, input_rows, upstream_artifacts, upstream_handle
 
 
 def _invoke(
     component: Any,
-    ctx: RunContext,
+    ctx: Any,
     nplan: NodePlan,
     dataset: DatasetHandle | None,
     input_rows: list[dict[str, Any]] | None,
@@ -333,7 +400,7 @@ def _invoke(
     return cres
 
 
-def _remember_source_path(ctx: RunContext, node_type: str, cres: ComponentResult) -> None:
+def _remember_source_path(ctx: Any, node_type: str, cres: ComponentResult) -> None:
     path = None
     if cres.artifact is not None and cres.artifact.path:
         path = cres.artifact.path
@@ -370,7 +437,7 @@ def _summarize_output(o: ComponentResult) -> dict[str, Any]:
         artifact_meta = o.artifact.to_dict()
     return {
         "rows": n_rows,
-        "rejects": len(o.rejects),
+        "rejects": o.metrics.rows_rejected if o.metrics.rows_rejected else len(o.rejects),
         "side_effects": o.side_effects,
         "artifacts": {
             k: (str(v) if isinstance(v, (Path, bytes)) else v)

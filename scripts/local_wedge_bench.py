@@ -190,6 +190,53 @@ def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
+def write_csv_streaming(path: Path, plan: CountPlan) -> None:
+    """Generate the deterministic bench CSV without holding N row dicts in RAM."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+        writer.writeheader()
+        # Unique loaded rows
+        for i in range(1, plan.loaded + 1):
+            writer.writerow(
+                {
+                    "order_id": str(i),
+                    "customer_id": str(1000 + (i % 5000)),
+                    "email": f"user{i}@example.com",
+                    "quantity": str(1 + (i % 9)),
+                    "unit_price": f"{(9.99 + (i % 50)):.2f}",
+                    "order_date": f"2024-{(1 + (i % 12)):02d}-{(1 + (i % 28)):02d}",
+                    "status": "shipped" if i % 3 else "pending",
+                }
+            )
+        # Duplicate copies of the first `dups` unique keys
+        for i in range(1, plan.dups + 1):
+            writer.writerow(
+                {
+                    "order_id": str(i),
+                    "customer_id": str(1000 + (i % 5000)),
+                    "email": f"user{i}@example.com",
+                    "quantity": str(1 + (i % 9)),
+                    "unit_price": f"{(9.99 + (i % 50)):.2f}",
+                    "order_date": f"2024-{(1 + (i % 12)):02d}-{(1 + (i % 28)):02d}",
+                    "status": "shipped" if i % 3 else "pending",
+                }
+            )
+        for i in range(plan.rejects):
+            rid = 90_000_000 + i
+            writer.writerow(
+                {
+                    "order_id": str(rid),
+                    "customer_id": str(2000 + i),
+                    "email": "not-an-email",
+                    "quantity": str(1),
+                    "unit_price": "1.00",
+                    "order_date": "2024-06-15",
+                    "status": "pending",
+                }
+            )
+
+
 def encrypt_csv(plaintext: Path, ciphertext: Path, public_key_path: Path) -> None:
     """Encrypt CSV with demo public key (pgpy). Path-only output for large files."""
     import pgpy
@@ -209,6 +256,67 @@ def peak_rss_mb() -> float:
     if usage > 10_000_000:
         return usage / (1024.0 * 1024.0)
     return usage / 1024.0
+
+
+def run_pipeline_isolated(
+    pipeline_dict: dict[str, Any],
+    work_dir: Path,
+) -> dict[str, Any]:
+    """Execute the wedge in a child process so ru_maxrss is the pipeline only.
+
+    Fixture encrypt / prior scales in the parent must not pollute peak RSS.
+    """
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        pipe_path = Path(td) / "pipeline.json"
+        out_path = Path(td) / "run.json"
+        pipe_path.write_text(json.dumps(pipeline_dict), encoding="utf-8")
+        child = (
+            "import json, os, time, resource, sys\n"
+            "from pathlib import Path\n"
+            "os.environ['FORMULAETL_DEMO'] = '1'\n"
+            "from formulaetl.engine.runner import PipelineRunner\n"
+            "from formulaetl.models.pipeline import PipelineDefinition\n"
+            "\n"
+            "def peak():\n"
+            "    u = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+            "    return u / (1024.0 * 1024.0) if u > 10_000_000 else u / 1024.0\n"
+            "\n"
+            f"work = Path({str(work_dir)!r})\n"
+            f"pipe = json.loads(Path({str(pipe_path)!r}).read_text())\n"
+            "pipeline = PipelineDefinition.model_validate(pipe)\n"
+            "runner = PipelineRunner(work_dir=work, demo_mode=True)\n"
+            "t0 = time.perf_counter()\n"
+            "run = runner.run(pipeline)\n"
+            "elapsed = time.perf_counter() - t0\n"
+            "payload = {\n"
+            "    'status': run.status,\n"
+            "    'error': run.error,\n"
+            "    'duration_ms': run.duration_ms,\n"
+            "    'elapsed_s': elapsed,\n"
+            "    'peak_rss_mb': peak(),\n"
+            "    'node_metrics': run.node_metrics,\n"
+            "}\n"
+            f"Path({str(out_path)!r}).write_text(json.dumps(payload))\n"
+            "sys.exit(0 if run.status == 'success' else 1)\n"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", child],
+            cwd=str(work_dir),
+            env={**os.environ, "FORMULAETL_DEMO": "1", "FORMULAETL_WORK_DIR": str(work_dir)},
+            capture_output=True,
+            text=True,
+        )
+        if not out_path.exists():
+            raise RuntimeError(
+                f"isolated pipeline child failed (code={proc.returncode}): "
+                f"{(proc.stderr or proc.stdout)[-2000:]}"
+            )
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        payload["child_stderr"] = (proc.stderr or "")[-500:]
+        return payload
 
 
 def build_pipeline(
@@ -402,8 +510,7 @@ def prepare_fixture(
     bench_dir = work_dir / "data" / "bench"
     bench_dir.mkdir(parents=True, exist_ok=True)
     csv_path = bench_dir / f"wedge_{plan.n}.csv"
-    rows = generate_rows(plan)
-    write_csv(csv_path, rows)
+    write_csv_streaming(csv_path, plan)
 
     if source == "s3":
         pgp_path = work_dir / "data" / "s3" / "demo" / f"wedge_bench_{plan.n}.csv.pgp"
@@ -471,23 +578,27 @@ def run_one(
             archive_rel=archive_rel,
         )
 
-        from formulaetl.engine.runner import PipelineRunner
-        from formulaetl.models.pipeline import PipelineDefinition
+        payload = run_pipeline_isolated(pipeline_dict, work_dir)
 
-        pipeline = PipelineDefinition.model_validate(pipeline_dict)
-        runner = PipelineRunner(work_dir=work_dir, demo_mode=True)
+        class _Run:
+            status: str
+            error: str | None
+            duration_ms: float
+            node_metrics: dict
 
-        rss_before = peak_rss_mb()
-        t0 = time.perf_counter()
-        run = runner.run(pipeline)
-        elapsed = time.perf_counter() - t0
-        rss_after = peak_rss_mb()
+        run = _Run()
+        run.status = payload["status"]
+        run.error = payload.get("error")
+        run.duration_ms = payload.get("duration_ms") or 0
+        run.node_metrics = payload.get("node_metrics") or {}
+        elapsed = float(payload.get("elapsed_s") or 0)
+        rss_peak = float(payload.get("peak_rss_mb") or 0)
 
         if timebox_s is not None and elapsed > timebox_s:
             result.status = "failed"
             result.error = f"exceeded timebox {timebox_s}s (elapsed={elapsed:.1f}s)"
             result.elapsed_s = round(elapsed, 4)
-            result.peak_rss_mb = round(max(rss_before, rss_after), 2)
+            result.peak_rss_mb = round(rss_peak, 2)
             result.evidence = "FAILED"
             return result
 
@@ -519,14 +630,14 @@ def run_one(
         result.reconcile_ok = ok
         result.reconcile_equation = eq
         result.elapsed_s = round(elapsed, 4)
-        result.peak_rss_mb = round(max(rss_before, rss_after), 2)
+        result.peak_rss_mb = round(rss_peak, 2)
         result.rows_per_sec = round(parse_out / elapsed, 2) if elapsed > 0 else 0.0
         result.node_metrics = nm
         result.status = run.status if ok and run.status == "success" else (
             "failed" if run.status != "success" or not ok else "success"
         )
         if run.status != "success":
-            result.error = run.error
+            result.error = run.error or payload.get("child_stderr")
             result.evidence = "FAILED"
             result.status = "failed"
         elif not ok:
@@ -537,7 +648,8 @@ def run_one(
             result.evidence = "PROVEN"
             result.status = "success"
             result.notes.append(
-                f"duration_ms={run.duration_ms:.1f} peak_rss_mb≈{result.peak_rss_mb}"
+                f"duration_ms={run.duration_ms:.1f} peak_rss_mb≈{result.peak_rss_mb} "
+                "(child-process RSS; excludes fixture encrypt)"
             )
 
     except Exception as exc:  # noqa: BLE001 — bench harness surfaces any failure

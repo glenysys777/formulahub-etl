@@ -1,16 +1,27 @@
-"""Snowflake Destination — real connector or demo mode CSV under ./data/out/snowflake."""
+"""Snowflake Destination — real connector or demo mode CSV under ./data/out/snowflake.
+
+Demo path streams RowBatches to disk (``consume_dataset``) so the full load
+set is never held as ``list[dict]`` in process RAM.
+"""
 
 from __future__ import annotations
 
 import csv
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.capabilities import STREAMING_SINK
 from formulaetl.sdk.connections import connection_id_param
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
+from formulaetl.sdk.data import DatasetHandle
 from formulaetl.sdk.registry import register
+
+
+def _clean_row(r: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in r.items() if not k.startswith("_")}
 
 
 @register
@@ -18,6 +29,7 @@ class SnowflakeDestination(BaseComponent):
     component_type = "snowflake_destination"
     display_name = "Snowflake Destination"
     category = "destination"
+    capabilities = STREAMING_SINK
     config_schema = {
         "type": "object",
         "properties": {
@@ -47,17 +59,119 @@ class SnowflakeDestination(BaseComponent):
         {"key": "demo_output_dir", "label": "Demo output dir", "type": "string", "required": False, "default": "data/out/snowflake", "help": "CSV output path in demo mode"},
     ]
 
+    def _demo_stream_write(
+        self,
+        ctx: RunContext,
+        dataset: DatasetHandle,
+        *,
+        table: str,
+        database: str,
+        schema: str,
+    ) -> tuple[ComponentResult, Metrics]:
+        metrics = Metrics()
+        out_dir = ctx.resolve(self.config.get("demo_output_dir", "data/out/snowflake"))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        out_path = out_dir / f"{table.lower()}_{ts}.csv"
+
+        fieldnames: list[str] | None = None
+        n_in = 0
+        n_out = 0
+        n_batches = 0
+        with out_path.open("w", newline="", encoding="utf-8") as f:
+            writer: csv.DictWriter | None = None
+            for batch in dataset.iter_batches(getattr(ctx, "batch_size", None)):
+                n_batches += 1
+                raw_rows = batch.rows
+                n_in += len(raw_rows)
+                if not raw_rows:
+                    continue
+                if any(k.startswith("_") for k in raw_rows[0]):
+                    clean = [_clean_row(r) for r in raw_rows]
+                else:
+                    clean = raw_rows
+                if writer is None:
+                    fieldnames = list(clean[0].keys())
+                    for r in clean[1:]:
+                        for k in r:
+                            if k not in fieldnames:
+                                fieldnames.append(k)
+                    writer = csv.DictWriter(
+                        f, fieldnames=fieldnames, extrasaction="ignore"
+                    )
+                    writer.writeheader()
+                writer.writerows(clean)
+                n_out += len(clean)
+
+        log_path = out_path.with_suffix(".load.json")
+        load_meta = {
+            "mode": "demo",
+            "target": f"{database}.{schema}.{table}",
+            "rows_loaded": n_out,
+            "file": str(out_path),
+            "timestamp": ts,
+            "note": (
+                "Demo mode — wrote CSV with same schema as a Snowflake load. "
+                "Set FORMULAETL_DEMO=0 and provide account/user/password for real loads."
+            ),
+        }
+        log_path.write_text(json.dumps(load_meta, indent=2), encoding="utf-8")
+        ctx.emit(
+            f"SnowflakeDestination [demo]: loaded {n_out} rows → "
+            f"{database}.{schema}.{table} (file={out_path})"
+        )
+        metrics.rows_in = n_in
+        metrics.rows_out = n_out
+        metrics.extras["feed"] = "batches"
+        metrics.extras["batches"] = n_batches
+        metrics.extras["spill"] = True
+        return (
+            ComponentResult(
+                rows=[],
+                metrics=metrics,
+                side_effects={
+                    "mode": "demo",
+                    "target": f"{database}.{schema}.{table}",
+                    "written_path": str(out_path),
+                    "load_log": str(log_path),
+                    "rows_loaded": n_out,
+                },
+                artifacts={"path": str(out_path)},
+            ),
+            metrics,
+        )
+
+    def consume_dataset(self, ctx: RunContext, dataset: DatasetHandle) -> ComponentResult:
+        """Stream batches to demo CSV (or fall back to legacy materialize for live)."""
+        table = self.config.get("table", "FORMULAETL_LOAD")
+        database = self.config.get("database", "DEMO_DB")
+        schema = self.config.get("schema", "PUBLIC")
+        use_demo = ctx.demo_mode or os.environ.get("FORMULAETL_DEMO") == "1"
+        if not use_demo and not self.config.get("account"):
+            use_demo = True
+            ctx.emit("SnowflakeDestination: no account configured — using demo mode")
+
+        if not use_demo:
+            return self.run(ctx, dataset.materialize())
+
+        metrics = Metrics()
+        with timed(metrics):
+            cres, _ = self._demo_stream_write(
+                ctx, dataset, table=table, database=database, schema=schema
+            )
+        cres.metrics.duration_ms = metrics.duration_ms
+        return cres
+
     def run(self, ctx: RunContext, rows: list[dict[str, Any]] | None = None) -> ComponentResult:
         metrics = Metrics()
         with timed(metrics):
             rows = rows or []
-            clean = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+            clean = [_clean_row(r) for r in rows]
             table = self.config.get("table", "FORMULAETL_LOAD")
             database = self.config.get("database", "DEMO_DB")
             schema = self.config.get("schema", "PUBLIC")
 
             use_demo = ctx.demo_mode or os.environ.get("FORMULAETL_DEMO") == "1"
-            # Also fall back to demo if credentials missing
             if not use_demo and not self.config.get("account"):
                 use_demo = True
                 ctx.emit("SnowflakeDestination: no account configured — using demo mode")
@@ -77,10 +191,7 @@ class SnowflakeDestination(BaseComponent):
                     writer.writeheader()
                     writer.writerows(clean)
 
-                # Write a sidecar load log mimicking Snowflake load metadata
                 log_path = out_path.with_suffix(".load.json")
-                import json
-
                 load_meta = {
                     "mode": "demo",
                     "target": f"{database}.{schema}.{table}",
@@ -100,7 +211,7 @@ class SnowflakeDestination(BaseComponent):
                 metrics.rows_in = len(rows)
                 metrics.rows_out = len(clean)
                 return ComponentResult(
-                    rows=rows,
+                    rows=[],
                     metrics=metrics,
                     side_effects={
                         "mode": "demo",
@@ -112,7 +223,6 @@ class SnowflakeDestination(BaseComponent):
                     artifacts={"path": str(out_path)},
                 )
 
-            # Real Snowflake
             try:
                 import snowflake.connector
             except ImportError as exc:
@@ -145,7 +255,7 @@ class SnowflakeDestination(BaseComponent):
             metrics.rows_in = len(rows)
             metrics.rows_out = len(clean)
             return ComponentResult(
-                rows=rows,
+                rows=[],
                 metrics=metrics,
                 side_effects={
                     "mode": "snowflake",
