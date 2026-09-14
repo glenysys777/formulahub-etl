@@ -50,7 +50,7 @@ FORMULAETL_CONTEXT=QA FORMULAETL_DEMO=1 python -m formulaetl.cli run demos/api-d
 2. Write SQL with `${run_date}`, `${context.env}`, `${upstream.…}` as needed.
 3. Preview **Resolved** values for the active context (no live warehouse call).
 4. Run with `FORMULAETL_DEMO=1` → sidecar under `data/out/databricks_sql_demo/` includes `sql_resolved`.
-5. For LIVE: set `workspace_host`, `token`, `warehouse_id`, `FORMULAETL_DEMO=0`. Free Edition SQL smoke Soft-PASS: [`docs/evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json) (Jobs still UNPROVEN; PAT never in repo).
+5. For LIVE: set `workspace_host`, `token`, `warehouse_id`, `FORMULAETL_DEMO=0`. Free Edition Soft-PASS: SQL [`docs/evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json); Jobs [`docs/evidence/databricks_job_smoke_redacted.json`](./evidence/databricks_job_smoke_redacted.json) (PAT never in repo).
 
 **Databricks Job** (`databricks_job`) notebook/python param *values* use the same `${…}` resolver.
 

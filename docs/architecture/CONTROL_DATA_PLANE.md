@@ -62,7 +62,7 @@ See capability matrix in `docs/PRODUCTION_READINESS.md`.
 ```
 
 - **DEMO proven:** sidecar SUCCESS / SUCCEEDED with resolved params — CI and `FORMULAETL_DEMO=1`.
-- **LIVE external proven (SQL Soft-PASS):** Free Edition Statement Execution API `SELECT 1` — [`docs/evidence/databricks_sql_smoke_redacted.json`](../evidence/databricks_sql_smoke_redacted.json) (2026-09-14). **Jobs** still **UNPROVEN**.
+- **LIVE external proven (Soft-PASS):** Free Edition SQL `SELECT 1` — [`docs/evidence/databricks_sql_smoke_redacted.json`](../evidence/databricks_sql_smoke_redacted.json); Free Edition Jobs API via FormulaETL — [`docs/evidence/databricks_job_smoke_redacted.json`](../evidence/databricks_job_smoke_redacted.json) (2026-09-14). Neither is a full LIVE wedge; Spark stays in Databricks.
 - Do **not** sell “FormulaETL runs Spark” or equate sidecar JSON with a cluster job.
 
 Evidence: [`docs/CUSTOMER001_EVIDENCE_MATRIX.md`](../CUSTOMER001_EVIDENCE_MATRIX.md) · Contexts: [`docs/CONTEXTS.md`](../CONTEXTS.md).
