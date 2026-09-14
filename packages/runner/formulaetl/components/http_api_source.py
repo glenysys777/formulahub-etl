@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
+from formulaetl.sdk.connections import connection_id_param
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.registry import register
 
@@ -142,6 +143,7 @@ class HttpApiSource(BaseComponent):
         },
     }
     parameters = [
+        connection_id_param(),
         {"key": "url", "label": "URL", "type": "string", "required": True, "help": "HTTP(S) endpoint"},
         {
             "key": "method",

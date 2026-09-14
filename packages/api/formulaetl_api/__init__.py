@@ -5,6 +5,11 @@ Phase D/E control plane:
   - Durable SQLite ledger for pipelines, versions, runs, node_runs, events, schedules
   - Embedded worker thread by default; standalone ``python -m formulaetl_api.worker``
   - No global run lock — concurrent claimed jobs execute independently
+
+Phase F:
+  - Reusable Connections + SecretProvider (env + encrypted local store)
+  - Optional ``FORMULAETL_API_KEY`` gate (Community open when unset)
+  - Pipeline/connection GET responses mask secret material
 """
 
 from __future__ import annotations
@@ -14,16 +19,25 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from formulaetl.models.pipeline import PipelineDefinition
+from formulaetl.sdk.connections import CONNECTION_KINDS
 from formulaetl.sdk.registry import list_components
+from formulaetl.sdk.secrets import (
+    CompositeSecretProvider,
+    EnvSecretProvider,
+    mask_config,
+    strip_secrets_for_ai,
+)
 from formulaetl_api.ai_builder import build_pipeline_from_text
 from formulaetl_api.db import STATUS_QUEUED, Database
 from formulaetl_api.scheduler import PipelineScheduler, ScheduleStore
-from formulaetl_api.store import PipelineStore, RunStore
+from formulaetl_api.store import ConnectionStore, PipelineStore, RunStore
 from formulaetl_api.worker import RunWorker
 
 WORK_DIR = Path(os.environ.get("FORMULAETL_WORK_DIR", Path(__file__).resolve().parents[2]))
@@ -39,9 +53,9 @@ app = FastAPI(
     title="FormulaETL API",
     description=(
         "Open-source visual ETL — pipeline CRUD, async run queue, durable history, "
-        "AI builder, scheduler"
+        "connections + secret refs, AI builder, scheduler"
     ),
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -52,12 +66,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    """Optional gate: when FORMULAETL_API_KEY is set, require matching header.
+
+    Accepts ``X-API-Key: <key>`` or ``Authorization: Bearer <key>``.
+    ``/health`` stays open for probes. When the env var is unset, Community stays open.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        expected = os.environ.get("FORMULAETL_API_KEY", "").strip()
+        if not expected:
+            return await call_next(request)
+        path = request.url.path
+        if path == "/health" or path == "/docs" or path == "/openapi.json" or path == "/redoc":
+            return await call_next(request)
+        provided = request.headers.get("x-api-key") or ""
+        if not provided:
+            auth = request.headers.get("authorization") or ""
+            if auth.lower().startswith("bearer "):
+                provided = auth[7:].strip()
+        if provided != expected:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
+app.add_middleware(ApiKeyMiddleware)
+
 db = Database(DB_PATH)
 pipelines = PipelineStore(db, legacy_json_root=WORK_DIR / "data" / "pipelines")
 schedules = ScheduleStore(db, legacy_json_root=WORK_DIR / "data" / "schedules")
 runs = RunStore(db)
+connections = ConnectionStore(db, work_dir=WORK_DIR, demo_mode=DEMO_MODE)
 _scheduler: PipelineScheduler | None = None
 _worker: RunWorker | None = None
+
+
+def _auth_mode() -> str:
+    return "api_key" if os.environ.get("FORMULAETL_API_KEY", "").strip() else "none"
+
+
+def _secret_provider() -> CompositeSecretProvider:
+    return CompositeSecretProvider(EnvSecretProvider(), connections.secret_store)
 
 
 def configure(
@@ -69,7 +119,7 @@ def configure(
 ) -> None:
     """Rebind module-level stores (tests / process boot)."""
     global WORK_DIR, DEMO_MODE, DB_PATH, EMBEDDED_WORKER
-    global db, pipelines, schedules, runs, _scheduler, _worker
+    global db, pipelines, schedules, runs, connections, _scheduler, _worker
 
     if work_dir is not None:
         WORK_DIR = Path(work_dir)
@@ -93,6 +143,20 @@ def configure(
     pipelines = PipelineStore(db, legacy_json_root=WORK_DIR / "data" / "pipelines")
     schedules = ScheduleStore(db, legacy_json_root=WORK_DIR / "data" / "schedules")
     runs = RunStore(db)
+    connections = ConnectionStore(db, work_dir=WORK_DIR, demo_mode=DEMO_MODE)
+
+
+def _mask_pipeline_dict(data: dict[str, Any]) -> dict[str, Any]:
+    """Mask secret-typed node config values for API responses."""
+    out = dict(data)
+    nodes = []
+    for node in out.get("nodes") or []:
+        n = dict(node)
+        cfg = n.get("config") or {}
+        n["config"] = mask_config(dict(cfg), component_type=n.get("type"))
+        nodes.append(n)
+    out["nodes"] = nodes
+    return out
 
 
 class PipelineCreate(BaseModel):
@@ -118,6 +182,7 @@ class AIBuildRequest(BaseModel):
 class SchemaDiscoverRequest(BaseModel):
     component_type: str
     config: dict[str, Any] = Field(default_factory=dict)
+    connection_id: str | None = None
 
 
 class RunResponse(BaseModel):
@@ -126,6 +191,22 @@ class RunResponse(BaseModel):
     run_id: str
     status: str
     pipeline_version_id: str | None = None
+
+
+class ConnectionCreate(BaseModel):
+    name: str
+    kind: str
+    description: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+    secrets: dict[str, Any] = Field(default_factory=dict)
+    id: str | None = None
+
+
+class ConnectionUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    config: dict[str, Any] | None = None
+    secrets: dict[str, Any] | None = None
 
 
 def _ensure_demo_loaded(*, refresh: bool = False) -> None:
@@ -205,6 +286,8 @@ def get_worker() -> RunWorker:
             demo_mode=DEMO_MODE,
             poll_interval_sec=float(os.environ.get("FORMULAETL_WORKER_POLL", "0.25")),
             max_concurrent=int(os.environ.get("FORMULAETL_WORKER_CONCURRENCY", "4")),
+            connections=connections,
+            secret_provider=_secret_provider(),
         )
     return _worker
 
@@ -214,6 +297,7 @@ def startup() -> None:
     pipelines.ensure()
     schedules.ensure()
     runs.ensure()
+    connections.ensure()
     _ensure_demo_loaded(refresh=True)
     # Drop legacy demo id so product UI never lists Talend-named pipelines
     pipelines.delete("demo-talend-core-path")
@@ -239,7 +323,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "demo_mode": DEMO_MODE,
-        "version": "0.2.0",
+        "version": "0.3.0",
         "work_dir": str(WORK_DIR),
         "db_path": str(DB_PATH),
         "scheduler": os.environ.get("FORMULAETL_SCHEDULER", "1") != "0",
@@ -248,7 +332,8 @@ def health() -> dict[str, Any]:
         # Honesty labels for operators
         "run_store": "sqlite",
         "data_path": "in_process_batches_and_artifact_handles",
-        "auth": "none",
+        "auth": _auth_mode(),
+        "secrets": "env_and_local_encrypted",
         "readiness_level": "ALPHA",
     }
 
@@ -262,11 +347,21 @@ def api_components() -> list[dict[str, Any]]:
 def schema_discover(body: SchemaDiscoverRequest) -> dict[str, Any]:
     """Infer columns + types from a source connection/sample (Talend-like schema)."""
     from formulaetl.schema.discover import discover
+    from formulaetl.sdk.connections import resolve_node_config
 
+    cfg = dict(body.config)
+    if body.connection_id:
+        cfg["connection_id"] = body.connection_id
     try:
+        resolved = resolve_node_config(
+            cfg,
+            component_type=body.component_type,
+            get_connection=connections.get,
+            provider=_secret_provider(),
+        )
         return discover(
             body.component_type,
-            body.config,
+            resolved,
             work_dir=WORK_DIR,
             demo_mode=DEMO_MODE,
         )
@@ -278,10 +373,77 @@ def schema_discover(body: SchemaDiscoverRequest) -> dict[str, Any]:
         raise HTTPException(500, f"Schema discovery failed: {exc}") from exc
 
 
+# ── Connections (Phase F) ────────────────────────────────────────────────────
+
+
+@app.get("/api/connections/kinds")
+def list_connection_kinds() -> dict[str, Any]:
+    return {"kinds": sorted(CONNECTION_KINDS)}
+
+
+@app.get("/api/connections")
+def list_connections(kind: str | None = None) -> list[dict[str, Any]]:
+    connections.ensure()
+    return [c.to_public_dict() for c in connections.list(kind=kind)]
+
+
+@app.post("/api/connections", status_code=201)
+def create_connection(body: ConnectionCreate) -> dict[str, Any]:
+    try:
+        rec = connections.create(
+            name=body.name,
+            kind=body.kind,
+            config=body.config,
+            secrets=body.secrets,
+            description=body.description,
+            connection_id=body.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return rec.to_public_dict()
+
+
+@app.get("/api/connections/{connection_id}")
+def get_connection(connection_id: str) -> dict[str, Any]:
+    rec = connections.get(connection_id)
+    if not rec:
+        raise HTTPException(404, f"Connection '{connection_id}' not found")
+    return rec.to_public_dict()
+
+
+@app.put("/api/connections/{connection_id}")
+def update_connection(connection_id: str, body: ConnectionUpdate) -> dict[str, Any]:
+    rec = connections.update(
+        connection_id,
+        name=body.name,
+        description=body.description,
+        config=body.config,
+        secrets=body.secrets,
+    )
+    if rec is None:
+        raise HTTPException(404, f"Connection '{connection_id}' not found")
+    return rec.to_public_dict()
+
+
+@app.delete("/api/connections/{connection_id}")
+def delete_connection(connection_id: str) -> dict[str, str]:
+    if not connections.delete(connection_id):
+        raise HTTPException(404, f"Connection '{connection_id}' not found")
+    return {"status": "deleted", "id": connection_id}
+
+
+@app.post("/api/connections/{connection_id}/test")
+def test_connection(connection_id: str) -> dict[str, Any]:
+    try:
+        return connections.test_connection(connection_id, demo_mode=DEMO_MODE)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @app.get("/api/pipelines")
 def list_pipelines() -> list[dict[str, Any]]:
     _ensure_demo_loaded()
-    return [p.model_dump() for p in pipelines.list()]
+    return [_mask_pipeline_dict(p.model_dump()) for p in pipelines.list()]
 
 
 @app.post("/api/pipelines", status_code=201)
@@ -296,7 +458,7 @@ def create_pipeline(body: PipelineCreate) -> dict[str, Any]:
         metadata=body.metadata,
     )
     version = pipelines.save(pipeline)
-    out = pipeline.model_dump()
+    out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     out["version"] = str(version.version_num)
     return out
@@ -308,7 +470,7 @@ def get_pipeline(pipeline_id: str) -> dict[str, Any]:
     p = pipelines.get(pipeline_id)
     if not p:
         raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
-    out = p.model_dump()
+    out = _mask_pipeline_dict(p.model_dump())
     ver = pipelines.get_current_version(pipeline_id)
     if ver:
         out["pipeline_version_id"] = ver.id
@@ -327,7 +489,7 @@ def update_pipeline(pipeline_id: str, body: PipelineCreate) -> dict[str, Any]:
         metadata=body.metadata,
     )
     version = pipelines.save(pipeline)
-    out = pipeline.model_dump()
+    out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     out["version"] = str(version.version_num)
     return out
@@ -362,7 +524,10 @@ def get_pipeline_version(pipeline_id: str, version_id: str) -> dict[str, Any]:
     v = pipelines.get_version(version_id)
     if v is None or v.pipeline_id != pipeline_id:
         raise HTTPException(404, f"Version '{version_id}' not found")
-    return v.to_dict()
+    data = v.to_dict()
+    if isinstance(data.get("definition"), dict):
+        data["definition"] = _mask_pipeline_dict(data["definition"])
+    return data
 
 
 @app.post("/api/pipelines/{pipeline_id}/run", response_model=RunResponse, status_code=202)
@@ -419,9 +584,32 @@ def get_run(run_id: str) -> dict[str, Any]:
 
 @app.post("/api/ai/build")
 def ai_build(body: AIBuildRequest) -> dict[str, Any]:
+    # Never forward secret material — description is user text only.
+    # Heuristic/LLM builders must not embed passwords (see ai_builder).
     pipeline = build_pipeline_from_text(body.description, name=body.name)
+    # Strip any accidental secret literals from generated nodes before save
+    cleaned_nodes = []
+    for node in pipeline.nodes:
+        n = node.model_dump() if hasattr(node, "model_dump") else dict(node)
+        n["config"] = strip_secrets_for_ai(
+            dict(n.get("config") or {}), component_type=n.get("type")
+        )
+        # Prefer empty secrets over "[omitted]" markers in stored graph
+        cfg = n["config"]
+        for k, v in list(cfg.items()):
+            if v == "[omitted]":
+                cfg[k] = ""
+        cleaned_nodes.append(n)
+    pipeline = PipelineDefinition(
+        id=pipeline.id,
+        name=pipeline.name,
+        description=pipeline.description,
+        nodes=cleaned_nodes,
+        edges=pipeline.edges,
+        metadata=pipeline.metadata,
+    )
     version = pipelines.save(pipeline)
-    out = pipeline.model_dump()
+    out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     return out
 

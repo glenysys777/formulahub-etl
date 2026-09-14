@@ -60,6 +60,9 @@ class RunContext:
     log: LogFn = field(default=lambda msg: print(msg))
     batch_size: int = 1024
     _node_metrics: dict[str, Metrics] = field(default_factory=dict)
+    # Phase F: optional connection + secret resolution (set by PipelineRunner)
+    secret_provider: Any | None = None
+    get_connection: Callable[[str], Any] | None = None
 
     def temp_dir(self) -> Path:
         """Per-run scratch directory for ArtifactHandle temp files."""
@@ -74,7 +77,9 @@ class RunContext:
         return (self.work_dir / p).resolve()
 
     def emit(self, message: str) -> None:
-        self.log(message)
+        from formulaetl.sdk.io_util import redact_secrets
+
+        self.log(redact_secrets(message))
 
     def record_metrics(self, node_id: str, metrics: Metrics) -> None:
         self._node_metrics[node_id] = metrics
@@ -82,6 +87,18 @@ class RunContext:
     def all_metrics(self) -> dict[str, dict[str, Any]]:
         return {k: v.to_dict() for k, v in self._node_metrics.items()}
 
+    def resolve_config(
+        self, node_config: dict[str, Any], *, component_type: str | None = None
+    ) -> dict[str, Any]:
+        """Merge ``connection_id`` + secret refs for a node (runtime only)."""
+        from formulaetl.sdk.connections import resolve_node_config
+
+        return resolve_node_config(
+            node_config,
+            component_type=component_type,
+            get_connection=self.get_connection,
+            provider=self.secret_provider,
+        )
 
 class timed:
     """Context manager that fills Metrics.duration_ms."""

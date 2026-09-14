@@ -1000,3 +1000,305 @@ class ScheduleStore:
             "DELETE FROM schedules WHERE pipeline_id=?", (pipeline_id,)
         )
         return cur.rowcount > 0
+
+
+class SqliteEncryptedSecretStore:
+    """Fernet-encrypted secrets in SQLite (``secret:<id>`` refs)."""
+
+    def __init__(self, db: Database, *, work_dir: Path | None = None, demo_mode: bool = True):
+        from formulaetl.sdk.secrets import load_fernet
+
+        self.db = db
+        self._lock = threading.Lock()
+        self._fernet = load_fernet(work_dir=work_dir, demo_mode=demo_mode)
+
+    def ensure(self) -> None:
+        self.db.ensure()
+
+    def get(self, ref: str) -> str | None:
+        import re
+
+        m = re.match(r"^secret:([A-Za-z0-9_-]+)$", str(ref).strip(), re.I)
+        if not m:
+            return None
+        self.ensure()
+        row = self.db.execute(
+            "SELECT ciphertext FROM secrets WHERE id = ?", (m.group(1),)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            return self._fernet.decrypt(row["ciphertext"].encode("utf-8")).decode("utf-8")
+        except Exception:
+            return None
+
+    def put(self, name: str, value: str) -> str:
+        self.ensure()
+        sid = uuid.uuid4().hex
+        now = _now()
+        cipher = self._fernet.encrypt(value.encode("utf-8")).decode("utf-8")
+        with self._lock:
+            self.db.execute(
+                "INSERT INTO secrets(id, name, ciphertext, created_at, updated_at) "
+                "VALUES (?,?,?,?,?)",
+                (sid, name, cipher, now, now),
+            )
+        return f"secret:{sid}"
+
+    def delete(self, ref: str) -> bool:
+        import re
+
+        m = re.match(r"^secret:([A-Za-z0-9_-]+)$", str(ref).strip(), re.I)
+        if not m:
+            return False
+        self.ensure()
+        with self._lock:
+            cur = self.db.execute("DELETE FROM secrets WHERE id = ?", (m.group(1),))
+            return cur.rowcount > 0
+
+
+class ConnectionStore:
+    """CRUD for reusable Connections (secret fields stored as refs)."""
+
+    def __init__(
+        self,
+        db: Database | Path | str,
+        *,
+        secret_store: SqliteEncryptedSecretStore | None = None,
+        work_dir: Path | None = None,
+        demo_mode: bool = True,
+    ):
+        resolved, _ = _as_database(db, default_name="formulaetl.db")
+        self.db = resolved
+        self._lock = threading.Lock()
+        self.demo_mode = demo_mode
+        self.work_dir = work_dir
+        self.secret_store = secret_store or SqliteEncryptedSecretStore(
+            self.db, work_dir=work_dir, demo_mode=demo_mode
+        )
+
+    def ensure(self) -> None:
+        self.db.ensure()
+        self.secret_store.ensure()
+
+    def _provider(self):
+        from formulaetl.sdk.secrets import CompositeSecretProvider, EnvSecretProvider
+
+        return CompositeSecretProvider(EnvSecretProvider(), self.secret_store)
+
+    def create(
+        self,
+        *,
+        name: str,
+        kind: str,
+        config: dict[str, Any] | None = None,
+        secrets: dict[str, Any] | None = None,
+        description: str = "",
+        connection_id: str | None = None,
+    ):
+        from formulaetl.sdk.connections import (
+            CONNECTION_KINDS,
+            ConnectionRecord,
+            split_connection_payload,
+        )
+
+        kind = str(kind).lower().strip()
+        if kind not in CONNECTION_KINDS:
+            raise ValueError(
+                f"Unsupported connection kind '{kind}'. "
+                f"Supported: {', '.join(sorted(CONNECTION_KINDS))}"
+            )
+        self.ensure()
+        public, secret_vals = split_connection_payload(kind, config or {}, secrets)
+        provider = self._provider()
+        secret_refs: dict[str, str] = {}
+        for sk, sval in secret_vals.items():
+            if sval is None or sval == "":
+                continue
+            raw = str(sval)
+            from formulaetl.sdk.secrets import is_secret_ref
+
+            if is_secret_ref(raw):
+                secret_refs[sk] = raw
+            else:
+                secret_refs[sk] = provider.put(f"{name}.{sk}", raw)
+
+        cid = connection_id or str(uuid.uuid4())
+        now = _now()
+        with self._lock:
+            self.db.execute(
+                "INSERT INTO connections(id, name, kind, description, config_json, "
+                "secrets_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    cid,
+                    name,
+                    kind,
+                    description,
+                    json.dumps(public, default=str),
+                    json.dumps(secret_refs, default=str),
+                    now,
+                    now,
+                ),
+            )
+        return ConnectionRecord(
+            id=cid,
+            name=name,
+            kind=kind,
+            config=public,
+            secrets=secret_refs,
+            description=description,
+            created_at=now,
+            updated_at=now,
+        )
+
+    def get(self, connection_id: str):
+        from formulaetl.sdk.connections import ConnectionRecord
+
+        self.ensure()
+        row = self.db.execute(
+            "SELECT id, name, kind, description, config_json, secrets_json, "
+            "created_at, updated_at FROM connections WHERE id = ?",
+            (connection_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return ConnectionRecord(
+            id=row["id"],
+            name=row["name"],
+            kind=row["kind"],
+            description=row["description"] or "",
+            config=json.loads(row["config_json"] or "{}"),
+            secrets=json.loads(row["secrets_json"] or "{}"),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+        )
+
+    def list(self, *, kind: str | None = None):
+        self.ensure()
+        if kind:
+            rows = self.db.execute(
+                "SELECT id, name, kind, description, config_json, secrets_json, "
+                "created_at, updated_at FROM connections WHERE kind = ? "
+                "ORDER BY updated_at DESC",
+                (kind,),
+            ).fetchall()
+        else:
+            rows = self.db.execute(
+                "SELECT id, name, kind, description, config_json, secrets_json, "
+                "created_at, updated_at FROM connections ORDER BY updated_at DESC"
+            ).fetchall()
+        from formulaetl.sdk.connections import ConnectionRecord
+
+        return [
+            ConnectionRecord(
+                id=r["id"],
+                name=r["name"],
+                kind=r["kind"],
+                description=r["description"] or "",
+                config=json.loads(r["config_json"] or "{}"),
+                secrets=json.loads(r["secrets_json"] or "{}"),
+                created_at=float(r["created_at"]),
+                updated_at=float(r["updated_at"]),
+            )
+            for r in rows
+        ]
+
+    def update(
+        self,
+        connection_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        config: dict[str, Any] | None = None,
+        secrets: dict[str, Any] | None = None,
+    ):
+        from formulaetl.sdk.secrets import is_masked, is_secret_ref
+
+        existing = self.get(connection_id)
+        if existing is None:
+            return None
+        new_name = name if name is not None else existing.name
+        new_desc = description if description is not None else existing.description
+        public = dict(existing.config)
+        secret_refs = dict(existing.secrets)
+        provider = self._provider()
+
+        if config is not None:
+            from formulaetl.sdk.connections import split_connection_payload
+
+            pub, sec = split_connection_payload(existing.kind, config, secrets)
+            public.update(pub)
+            for sk, sval in sec.items():
+                if sval is None or sval == "" or is_masked(sval):
+                    continue  # keep previous
+                raw = str(sval)
+                if is_secret_ref(raw):
+                    secret_refs[sk] = raw
+                else:
+                    # Replace previous secret row if it was ours
+                    old = secret_refs.get(sk)
+                    if old and str(old).startswith("secret:"):
+                        provider.delete(old)
+                    secret_refs[sk] = provider.put(f"{new_name}.{sk}", raw)
+        elif secrets:
+            for sk, sval in secrets.items():
+                if sval is None or sval == "" or is_masked(sval):
+                    continue
+                raw = str(sval)
+                if is_secret_ref(raw):
+                    secret_refs[sk] = raw
+                else:
+                    old = secret_refs.get(sk)
+                    if old and str(old).startswith("secret:"):
+                        provider.delete(old)
+                    secret_refs[sk] = provider.put(f"{new_name}.{sk}", raw)
+
+        now = _now()
+        with self._lock:
+            self.db.execute(
+                "UPDATE connections SET name=?, description=?, config_json=?, "
+                "secrets_json=?, updated_at=? WHERE id=?",
+                (
+                    new_name,
+                    new_desc,
+                    json.dumps(public, default=str),
+                    json.dumps(secret_refs, default=str),
+                    now,
+                    connection_id,
+                ),
+            )
+        return self.get(connection_id)
+
+    def delete(self, connection_id: str) -> bool:
+        existing = self.get(connection_id)
+        if existing is None:
+            return False
+        provider = self._provider()
+        for ref in existing.secrets.values():
+            if str(ref).startswith("secret:"):
+                provider.delete(ref)
+        with self._lock:
+            cur = self.db.execute(
+                "DELETE FROM connections WHERE id = ?", (connection_id,)
+            )
+            return cur.rowcount > 0
+
+    def resolved_config(self, connection_id: str) -> dict[str, Any] | None:
+        """Return public config + plaintext secrets for runtime/test only."""
+        from formulaetl.sdk.connections import merge_connection_into_config
+
+        conn = self.get(connection_id)
+        if conn is None:
+            return None
+        return merge_connection_into_config({}, conn, self._provider())
+
+    def test_connection(self, connection_id: str, *, demo_mode: bool | None = None) -> dict[str, Any]:
+        """Lightweight connectivity check. DEMO=1 returns mock success for demo hosts."""
+        from formulaetl_api.connection_test import test_connection_config
+
+        conn = self.get(connection_id)
+        if conn is None:
+            raise KeyError(f"Connection '{connection_id}' not found")
+        resolved = self.resolved_config(connection_id) or {}
+        use_demo = self.demo_mode if demo_mode is None else demo_mode
+        return test_connection_config(conn.kind, resolved, demo_mode=use_demo)

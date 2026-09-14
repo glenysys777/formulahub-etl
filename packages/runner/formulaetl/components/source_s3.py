@@ -14,6 +14,7 @@ from typing import Any
 
 from formulaetl.sdk.base import BaseComponent
 from formulaetl.sdk.capabilities import ARTIFACT_SOURCE
+from formulaetl.sdk.connections import connection_id_param
 from formulaetl.sdk.context import ComponentResult, Metrics, RunContext, timed
 from formulaetl.sdk.data import ArtifactHandle
 from formulaetl.sdk.io_util import boto3_client_kwargs, redact_secrets, retry_call
@@ -91,6 +92,7 @@ class S3Source(BaseComponent):
         },
     }
     parameters = [
+        connection_id_param(),
         {"key": "bucket", "label": "Bucket", "type": "string", "required": True, "help": "S3 bucket name"},
         {"key": "key", "label": "Object key", "type": "string", "required": False, "help": "Object key / path within bucket"},
         {"key": "prefix", "label": "Prefix", "type": "string", "required": False, "help": "Optional prefix to list (paginated)"},
@@ -200,6 +202,15 @@ class S3Source(BaseComponent):
                 read_timeout=float(self.config.get("read_timeout") or 60),
                 max_attempts=int(self.config.get("max_attempts") or 5),
             )
+            # Optional explicit keys from a Connection (prefer IAM/env chain otherwise)
+            if self.config.get("access_key_id") and (
+                self.config.get("secret_access_key") or self.config.get("aws_secret_access_key")
+            ):
+                kwargs["aws_access_key_id"] = self.config["access_key_id"]
+                kwargs["aws_secret_access_key"] = (
+                    self.config.get("secret_access_key")
+                    or self.config.get("aws_secret_access_key")
+                )
             client = boto3.client("s3", **kwargs)
 
             if list_only or (prefix is not None and not key):

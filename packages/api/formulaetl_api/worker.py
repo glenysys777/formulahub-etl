@@ -21,7 +21,7 @@ from formulaetl.engine.runner import PipelineRunner
 from formulaetl_api.db import STATUS_FAILED, STATUS_RUNNING
 
 if TYPE_CHECKING:
-    from formulaetl_api.store import PipelineStore, RunStore
+    from formulaetl_api.store import ConnectionStore, PipelineStore, RunStore
 
 
 def default_worker_id() -> str:
@@ -41,6 +41,8 @@ class RunWorker:
         worker_id: str | None = None,
         poll_interval_sec: float = 0.25,
         max_concurrent: int = 4,
+        connections: "ConnectionStore | None" = None,
+        secret_provider: object | None = None,
     ):
         self.runs = runs
         self.pipelines = pipelines
@@ -49,6 +51,8 @@ class RunWorker:
         self.worker_id = worker_id or default_worker_id()
         self.poll_interval_sec = poll_interval_sec
         self.max_concurrent = max(1, int(max_concurrent))
+        self.connections = connections
+        self.secret_provider = secret_provider
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._inflight = 0
@@ -138,7 +142,18 @@ class RunWorker:
             return
         pipeline = version.as_pipeline()
         try:
-            runner = PipelineRunner(work_dir=self.work_dir, demo_mode=self.demo_mode)
+            get_connection = None
+            secret_provider = self.secret_provider
+            if self.connections is not None:
+                get_connection = self.connections.get
+                if secret_provider is None:
+                    secret_provider = self.connections._provider()
+            runner = PipelineRunner(
+                work_dir=self.work_dir,
+                demo_mode=self.demo_mode,
+                secret_provider=secret_provider,
+                get_connection=get_connection,
+            )
             result = runner.run(pipeline, run_id=run_id)
             # Ensure status reflects runner outcome
             if result.status == STATUS_RUNNING:
@@ -173,8 +188,14 @@ def main() -> None:
     db.ensure()
     pipelines = PipelineStore(db, legacy_json_root=work_dir / "data" / "pipelines")
     runs = RunStore(db)
+    from formulaetl_api.store import ConnectionStore
+    from formulaetl.sdk.secrets import CompositeSecretProvider, EnvSecretProvider
+
+    connections = ConnectionStore(db, work_dir=work_dir, demo_mode=demo)
     pipelines.ensure()
     runs.ensure()
+    connections.ensure()
+    secret_provider = CompositeSecretProvider(EnvSecretProvider(), connections.secret_store)
 
     worker = RunWorker(
         runs,
@@ -183,6 +204,8 @@ def main() -> None:
         demo_mode=demo,
         poll_interval_sec=poll,
         max_concurrent=max_c,
+        connections=connections,
+        secret_provider=secret_provider,
     )
     print(
         f"FormulaETL worker {worker.worker_id} starting "

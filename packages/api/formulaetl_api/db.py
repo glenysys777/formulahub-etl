@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -22,6 +22,25 @@ CREATE TABLE IF NOT EXISTS pipelines (
   created_at REAL NOT NULL,
   updated_at REAL NOT NULL,
   metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS secrets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS connections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  config_json TEXT NOT NULL DEFAULT '{}',
+  secrets_json TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_versions (
@@ -109,6 +128,31 @@ CREATE INDEX IF NOT EXISTS idx_node_runs_run ON node_runs(run_id);
 CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id, ts);
 CREATE INDEX IF NOT EXISTS idx_queue_status ON job_queue(status, priority, created_at);
 CREATE INDEX IF NOT EXISTS idx_versions_pipeline ON pipeline_versions(pipeline_id, version_num);
+CREATE INDEX IF NOT EXISTS idx_connections_kind ON connections(kind);
+CREATE INDEX IF NOT EXISTS idx_secrets_name ON secrets(name);
+"""
+
+# Additive migrations when SCHEMA_VERSION increases (existing Community DBs).
+_MIGRATE_V2_SQL = """
+CREATE TABLE IF NOT EXISTS secrets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS connections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  config_json TEXT NOT NULL DEFAULT '{}',
+  secrets_json TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_connections_kind ON connections(kind);
+CREATE INDEX IF NOT EXISTS idx_secrets_name ON secrets(name);
 """
 
 # Canonical run / node statuses (API uses lowercase for backward compatibility).
@@ -152,6 +196,18 @@ class Database:
                     "INSERT INTO schema_meta(key, value) VALUES ('version', ?)",
                     (str(SCHEMA_VERSION),),
                 )
+            else:
+                try:
+                    current = int(row["value"])
+                except (TypeError, ValueError):
+                    current = 0
+                if current < 2:
+                    conn.executescript(_MIGRATE_V2_SQL)
+                if current < SCHEMA_VERSION:
+                    conn.execute(
+                        "UPDATE schema_meta SET value = ? WHERE key = 'version'",
+                        (str(SCHEMA_VERSION),),
+                    )
             conn.commit()
 
     def connect(self) -> sqlite3.Connection:

@@ -6,7 +6,7 @@ export FORMULAETL_WORK_DIR ?= $(ROOT)
 
 install:
 	python3 -m pip install -e packages/runner -e packages/api
-	python3 -m pip install pytest pytest-asyncio httpx openpyxl pandas 'paramiko>=3.0' 'psycopg[binary]>=3.1'
+	python3 -m pip install pytest pytest-asyncio httpx openpyxl pandas 'paramiko>=3.0' 'psycopg[binary]>=3.1' 'cryptography>=42.0'
 	cd apps/web && npm install
 
 seed:

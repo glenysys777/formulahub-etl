@@ -51,6 +51,9 @@ class PipelineRunner:
         work_dir: str | Path | None = None,
         demo_mode: bool | None = None,
         batch_size: int | None = None,
+        *,
+        secret_provider: Any | None = None,
+        get_connection: Any | None = None,
     ):
         self.work_dir = Path(work_dir or os.getcwd()).resolve()
         if demo_mode is None:
@@ -63,14 +66,25 @@ class PipelineRunner:
             except ValueError:
                 batch_size = DEFAULT_BATCH_SIZE
         self.batch_size = max(1, int(batch_size))
+        self.secret_provider = secret_provider
+        self.get_connection = get_connection
 
     def run(self, pipeline: PipelineDefinition, run_id: str | None = None) -> RunResult:
         run_id = run_id or str(uuid.uuid4())
         logs: list[str] = []
 
         def _log(msg: str) -> None:
-            line = f"[{run_id[:8]}] {msg}"
+            from formulaetl.sdk.io_util import redact_secrets
+
+            line = f"[{run_id[:8]}] {redact_secrets(msg)}"
             logs.append(line)
+
+        # Default Community secret provider: env vars only (CLI without API store).
+        secret_provider = self.secret_provider
+        if secret_provider is None:
+            from formulaetl.sdk.secrets import EnvSecretProvider
+
+            secret_provider = EnvSecretProvider()
 
         ctx = RunContext(
             run_id=run_id,
@@ -80,6 +94,8 @@ class PipelineRunner:
             data_dir=self.work_dir / "data",
             log=_log,
             batch_size=self.batch_size,
+            secret_provider=secret_provider,
+            get_connection=self.get_connection,
         )
 
         result = RunResult(
@@ -117,7 +133,9 @@ class PipelineRunner:
                     f"→ Running node '{node.label or nid}' ({node.type}) "
                     f"feed={nplan.feed} ({nplan.reason})"
                 )
-                component = create_component(node.type, node.config)
+                # Phase F: merge connection_id + secret refs (never persist merged secrets)
+                resolved_cfg = ctx.resolve_config(node.config, component_type=node.type)
+                component = create_component(node.type, resolved_cfg)
                 component.validate_config()
 
                 dataset, input_rows, upstream_artifacts, upstream_handle = _gather_inputs(
