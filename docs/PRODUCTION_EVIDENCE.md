@@ -106,4 +106,4 @@ Merged on main as `3d1d9c9`. See prior H1–H8 claims (connections CRUD, test, S
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
 - CLI `formulaetl run` resolves env secret refs; ConnectionStore requires the API/DB path.
-- Pytest **count** for Phase G: **154 passed**, 1 skipped (Phase F was 146; Phase D+E was 133).
+- Pytest **count** for Phase G (+ live harness units): **158 passed**, 1 skipped, 1 deselected live (Phase G validate-only was 154; Phase F was 146).
