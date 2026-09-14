@@ -175,8 +175,9 @@ Reconciliation: **N=12 = R=2 + D=2 + L=8**.
 |----|-------|--------|---------|--------|------|
 | K0 | Fixture + pipeline + docs | PROVEN **LOCAL_ONLY** | paths under `fixtures/customer001_local_wedge/`, `demos/customer001-local-wedge/` | Pack present | 2026-09-14 |
 | K1 | DEMO reconcile always-on | PROVEN **LOCAL/DEMO** | `python3 scripts/customer001_local_wedge.py --mode demo` + pytest integration | N=R+D+L | 2026-09-14 |
-| K2 | Real local Postgres INSERT | PROVEN **LOCAL_PROVEN** when DSN up; else skip **LOCAL_ONLY** | `FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN=… --mode postgres` | Not LIVE_EXTERNAL | 2026-09-14 |
-| K3 | Snowflake bulk / Databricks / external SFTP·S3 | **GAP** | — | Document only — do not claim LIVE | 2026-09-14 |
+| K2 | Real local Postgres INSERT → `formulahub_wedge.customers_wedge` | PROVEN **LOCAL_PROVEN** when DSN up; else skip **LOCAL_ONLY** | `FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN='host=localhost dbname=formulahub_wedge'` + Mac `START-POSTGRES.command` (LC_ALL=en_US.UTF-8) | Not LIVE_EXTERNAL; trust/local socket OK | 2026-09-14 |
+| K3 | Adapted demos (s3-pgp / core-path / lookup) → local PG | PROVEN **LOCAL_PROVEN** when PG up | `demos/*/pipeline.local-postgres.json` | Files + customers_wedge; cloud dest UNPROVEN | 2026-09-14 |
+| K4 | Snowflake bulk / Databricks / external SFTP·S3 | **GAP / UNPROVEN** | — | Document only — do not claim LIVE | 2026-09-14 |
 
 ---
 

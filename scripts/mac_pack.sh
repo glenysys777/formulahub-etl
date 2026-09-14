@@ -3,6 +3,7 @@
 #
 # Top-level after unzip:
 #   FormulaHub Studio.app     ← double-click (primary)
+#   START-POSTGRES.command    ← Homebrew Postgres 16 (LC_ALL fix → formulahub_wedge)
 #   START-NATIVE.command      ← Terminal fallback
 #   README_MAC.md             ← short: unzip → double-click app
 #   FormulaHub-ETL/           ← repo sources (Docker / make install)
@@ -268,6 +269,13 @@ CMD
 chmod +x "${STAGE}/START-NATIVE.command"
 
 # ---------------------------------------------------------------------------
+# START-POSTGRES.command — Homebrew Postgres 16 for LOCAL_PROVEN wedge
+# ---------------------------------------------------------------------------
+cp "${ROOT}/scripts/START-POSTGRES.command" "${STAGE}/START-POSTGRES.command"
+chmod +x "${STAGE}/START-POSTGRES.command"
+# Ensure DDL is present under FormulaHub-ETL/fixtures/sql (copied with repo tree)
+
+# ---------------------------------------------------------------------------
 # Short README — lead with .app
 # ---------------------------------------------------------------------------
 cat > "${STAGE}/README_MAC.md" << 'EOF'
@@ -302,6 +310,22 @@ make install && make seed && make build
 cd apps/desktop && npm install && npm run dist:mac
 open release/mac*/FormulaHub\ Studio.app
 ```
+
+### LOCAL Postgres (Mac)
+
+Double-click **`START-POSTGRES.command`** (sets `LC_ALL=en_US.UTF-8`, starts Homebrew
+`postgresql@16`, ensures DB `formulahub_wedge` + table `customers_wedge`).
+
+Then LOCAL_PROVEN write (`FORMULAETL_DEMO=0`, real psycopg — **not** LIVE_EXTERNAL):
+
+```bash
+cd FormulaHub-ETL
+export FORMULAETL_DEMO=0
+export LOCAL_POSTGRES_DSN="host=localhost port=5432 dbname=formulahub_wedge"
+python3 scripts/customer001_local_wedge.py --mode postgres
+```
+
+See `docs/CUSTOMER001_LOCAL_WEDGE.md`.
 
 ### Fallback
 

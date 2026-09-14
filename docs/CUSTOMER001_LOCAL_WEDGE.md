@@ -4,126 +4,138 @@
 
 | Label | Meaning |
 |-------|---------|
-| `LOCAL_PROVEN` | Real local filesystem drop + real local Postgres `INSERT` (`FORMULAETL_DEMO=0`) |
-| `LOCAL/DEMO` | Same DAG; Postgres node writes SQLite/CSV mirror under `data/out/customer001/` |
-| `LOCAL_ONLY` | Marker for skip / no Postgres — **not** a cloud claim |
-| `LIVE_EXTERNAL` | **Out of scope** here (SFTP/S3/Snowflake/Databricks). Do **not** claim LIVE from this wedge. |
+| `LOCAL_PROVEN` | Real local filesystem + real local Postgres `INSERT` via **psycopg** (`FORMULAETL_DEMO=0`) |
+| `LOCAL/DEMO` | Same DAG; Postgres node writes SQLite/CSV mirror under `data/out/` |
+| `LOCAL_ONLY` | Skip / no Postgres marker — **not** a cloud claim |
+| `LIVE_EXTERNAL` | **UNPROVEN / out of scope** (SFTP/S3/Snowflake/Databricks). Never claim LIVE from this wedge. |
 
-This path is the founder-chosen production-shaped wedge: **prove on Mac files + Postgres first**.
+Founder-chosen path: **prove on Mac files + Homebrew Postgres first.**
 
-## Pipeline
+## Mac Postgres (founder pack — current)
+
+| Item | Value |
+|------|-------|
+| Engine | **Postgres 16** via Homebrew |
+| Locale fix | `export LC_ALL=en_US.UTF-8` (and `LANG`) before start — avoids postmaster multithreaded startup failure |
+| Helper | Desktop pack: **`FormulaHub-ETL-Mac/START-POSTGRES.command`** (also `scripts/START-POSTGRES.command` in repo) |
+| Listen | `localhost:5432` — **trust** / local socket OK |
+| Database | **`formulahub_wedge`** |
+| Table | **`customers_wedge`** `(customer_id, email, signup_date, loaded_at)` |
+| Pack fixtures | `fixtures/keys/demo_*.asc`, `fixtures/sample/customers.csv`, orders CSVs |
+
+### Start Postgres on Mac
+
+```bash
+# Double-click in the unzipped Mac pack:
+#   FormulaHub-ETL-Mac/START-POSTGRES.command
+#
+# Or from a Terminal in the repo:
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+bash scripts/START-POSTGRES.command
+```
+
+What the helper does:
+
+1. Sets `LC_ALL` / `LANG` to `en_US.UTF-8`
+2. `brew services start postgresql@16` (installs formula if missing)
+3. Ensures DB `formulahub_wedge` exists
+4. Applies `fixtures/sql/formulahub_wedge.sql` (`customers_wedge` DDL)
+5. Prints a ready DSN for `FORMULAETL_DEMO=0` runs
+
+### LOCAL_PROVEN write (real psycopg)
+
+```bash
+cd FormulaHub-ETL   # or repo root
+python3 -m pip install -e packages/runner -e packages/api
+python3 -m pip install pytest 'psycopg[binary]>=3.1' 'cryptography>=42.0'
+python3 scripts/seed_demo.py
+
+# Prefer DEMO=0 for real INSERT (not the SQLite/CSV mirror)
+export FORMULAETL_DEMO=0
+# Trust / local socket (no password) — Mac founder default:
+export LOCAL_POSTGRES_DSN="host=localhost port=5432 dbname=formulahub_wedge"
+# Optional explicit table (default customers_wedge):
+export LOCAL_POSTGRES_TABLE=customers_wedge
+
+python3 scripts/customer001_local_wedge.py --mode postgres
+```
+
+TCP + password form also works if you configured scram/md5:
+
+```bash
+export LOCAL_POSTGRES_DSN="host=127.0.0.1 port=5432 dbname=formulahub_wedge user=YOURUSER password=…"
+```
+
+### DEMO mirror (no Postgres required)
+
+```bash
+export FORMULAETL_DEMO=1
+python3 scripts/customer001_local_wedge.py --mode demo
+```
+
+## Pipeline (customer001)
 
 ```
 data/drop/customer001/orders.csv.pgp
   → pgp_decrypt (fixtures/keys/demo_private.asc)
   → csv_parser
-  → schema_validate  ──rejects──► data/rejects/customer001/orders_rejects.csv
-  → Field Mapper (tmap)
-  → lookup_join (fixtures/customer001_local_wedge/customers_lookup.csv)
-  → dedupe (order_id)
-  → logger_metrics
-  → postgres_destination
-  → archive_files → data/archive/customer001/
+  → schema_validate  ──rejects──► data/rejects/customer001/…
+  → Field Mapper → lookup → dedupe
+  → project → customers_wedge columns
+  → postgres_destination  (formulahub_wedge.customers_wedge when DEMO=0)
+  → archive_files
 ```
 
-Artifacts:
+Artifacts: `demos/customer001-local-wedge/` · `fixtures/customer001_local_wedge/` · `scripts/customer001_local_wedge.py`
 
-- Pipeline: `demos/customer001-local-wedge/pipeline.json`
-- Fixtures: `fixtures/customer001_local_wedge/`
-- Harness: `scripts/customer001_local_wedge.py`
-- Fail drills: `scripts/customer001_fail_injections/`
-- Evidence matrix: `docs/CUSTOMER001_EVIDENCE_MATRIX.md`
-
-## Expected counts (mathematical reconciliation)
-
-From `fixtures/customer001_local_wedge/expected_counts.json`:
+## Expected counts
 
 | Symbol | Meaning | Value |
 |--------|---------|------:|
 | **N** | CSV parse `rows_out` | 12 |
-| **R** | schema_validate `rows_rejected` (bad email) | 2 |
-| **D** | dedupe `rows_rejected` (dup `order_id`) | 2 |
-| **L** | postgres_destination `rows_out` | 8 |
+| **R** | schema rejects | 2 |
+| **D** | dedupe drops | 2 |
+| **L** | Postgres `rows_out` | 8 |
 
 **Invariant:** `N = R + D + L` → `12 = 2 + 2 + 8`.
 
-Also recorded by the harness: input bytes, archived files/bytes, per-node `duration_ms`, peak RSS (process).
+## Adapted demos → local files + local Postgres
 
-## Mac setup (Homebrew Postgres)
+Original cloud/demo destinations stay as DEMO. **LOCAL_PROVEN** variants retarget to filesystem + `formulahub_wedge.customers_wedge` (never S3/Snowflake LIVE):
+
+| Original | LOCAL Postgres variant |
+|----------|------------------------|
+| `demos/s3-pgp-snowflake/` | `demos/s3-pgp-snowflake/pipeline.local-postgres.json` |
+| `demos/core-path/` | `demos/core-path/pipeline.local-postgres.json` |
+| `demos/lookup-join-mapper/` | `demos/lookup-join-mapper/pipeline.local-postgres.json` |
 
 ```bash
-# 1) Tools
-brew install postgresql@16
-brew services start postgresql@16
-
-# 2) Role + DB (once)
-createuser -s formula || true
-psql postgres -c "ALTER USER formula WITH PASSWORD 'formula';"
-createdb -O formula formulaetl || true
-
-# 3) Repo
-cd formulahub-etl
-python3 -m pip install -e packages/runner -e packages/api
-python3 -m pip install pytest 'psycopg[binary]>=3.1' 'cryptography>=42.0'
-python3 scripts/seed_demo.py
-
-# 4a) DEMO mirror (no Postgres required)
-python3 scripts/customer001_local_wedge.py --mode demo
-
-# 4b) LOCAL_PROVEN real Postgres write
 export FORMULAETL_DEMO=0
-export LOCAL_POSTGRES_DSN="host=127.0.0.1 port=5432 dbname=formulaetl user=formula password=formula"
-python3 scripts/customer001_local_wedge.py --mode postgres
-
-# CLI (DEMO dest unless you edit pipeline host/DSN):
-FORMULAETL_DEMO=1 python3 -m formulaetl.cli run demos/customer001-local-wedge/pipeline.json
+export LOCAL_POSTGRES_DSN="host=localhost port=5432 dbname=formulahub_wedge"
+python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.local-postgres.json
+python3 -m formulaetl.cli run demos/core-path/pipeline.local-postgres.json
+python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.local-postgres.json
 ```
 
-Linux (apt) equivalent used in CI agents:
+These use pack fixtures (`fixtures/keys/demo_*.asc`, `fixtures/sample/*`). Classification: **LOCAL_PROVEN** when DEMO=0 + reachable Postgres; otherwise DEMO mirror / skip. **LIVE_EXTERNAL remains UNPROVEN.**
 
-```bash
-sudo apt-get install -y postgresql postgresql-client
-sudo service postgresql start
-sudo -u postgres createuser -s formula
-sudo -u postgres psql -c "ALTER USER formula PASSWORD 'formula';"
-sudo -u postgres createdb -O formula formulaetl
-```
+## Failure injections
 
-## Pytest
-
-```bash
-# Always-on LOCAL/DEMO reconcile (CI-safe):
-python3 -m pytest tests/integration/test_customer001_local_wedge.py -q
-
-# Real Postgres path (skips with LOCAL_ONLY if DSN unreachable):
-FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN='host=127.0.0.1 dbname=formulaetl user=formula password=formula' \
-  python3 -m pytest tests/integration/test_customer001_local_wedge.py -q -k postgres
-```
-
-CI: GitHub Actions may attach a Postgres service and set `LOCAL_POSTGRES_DSN`. If the service is absent, the postgres test **skips** with a clear `LOCAL_ONLY` marker — that is **not** LIVE_EXTERNAL evidence.
-
-## Failure injections (documented)
-
-| ID | Scenario | How |
-|----|----------|-----|
-| F1 | Bad PGP payload | `bash scripts/customer001_fail_injections/01_bad_pgp.sh` |
-| F2 | Missing drop file | `…/02_missing_file.sh` |
-| F3 | Malformed CSV inside PGP | `…/03_malformed_csv.sh` |
-| F4 | Schema drift (new required col) | `…/04_schema_drift.sh` |
-| F5 | Destination down (bad PG port) | `…/05_destination_down.sh` |
-| F6 | Retry / re-run replace | `…/06_retry.sh` |
-
-Run all: `bash scripts/customer001_fail_injections/run_all.sh`
+| ID | Scenario | Script |
+|----|----------|--------|
+| F1–F6 | bad PGP, missing file, bad CSV, schema drift, dest down, retry | `scripts/customer001_fail_injections/` |
 
 ## Gaps — do **not** claim LIVE
 
 | Path | Status |
 |------|--------|
-| Snowflake bulk load | **GAP** — document only; demo Snowflake CSV is not LIVE |
-| Databricks Jobs / SQL | **GAP** — not exercised by this wedge |
-| External SFTP / S3 | **GAP** — local drop only; see `docs/design-partner/LIVE_WEDGE.md` for cloud harness (UNPROVEN without partner creds) |
+| Snowflake bulk | **GAP / UNPROVEN** |
+| Databricks | **GAP / UNPROVEN** |
+| External SFTP / S3 | **GAP / UNPROVEN** |
 
 ## Related
 
-- Scale bench (mock S3 → snowflake-demo): `scripts/local_wedge_bench.py` — classification **LOCAL/DEMO**, not this customer001 LOCAL Postgres path
-- Cloud live harness: `scripts/live_wedge_e2e.py` — **LIVE_CLOUD / UNPROVEN** by default
+- Evidence matrix: `docs/CUSTOMER001_EVIDENCE_MATRIX.md`
+- DDL: `fixtures/sql/formulahub_wedge.sql`
+- Cloud live harness: `scripts/live_wedge_e2e.py` — **LIVE_EXTERNAL / UNPROVEN** by default

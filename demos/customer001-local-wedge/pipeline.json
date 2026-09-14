@@ -106,6 +106,21 @@
       "position": { "x": 1300, "y": 80 }
     },
     {
+      "id": "project",
+      "type": "tmap",
+      "label": "Project → customers_wedge",
+      "config": {
+        "mappings": [
+          "customer_id=str(customer_id)",
+          "email=lower(email)",
+          "signup_date=order_date",
+          "loaded_at='customer001-local-wedge'"
+        ],
+        "drop_unmapped": true
+      },
+      "position": { "x": 1500, "y": 80 }
+    },
+    {
       "id": "metrics",
       "type": "logger_metrics",
       "label": "Metrics",
@@ -113,19 +128,21 @@
         "label": "pre-load",
         "log_sample": 1
       },
-      "position": { "x": 1500, "y": 80 }
+      "position": { "x": 1700, "y": 80 }
     },
     {
       "id": "dest",
       "type": "postgres_destination",
-      "label": "Postgres (local or DEMO)",
+      "label": "Postgres LOCAL (customers_wedge)",
       "config": {
-        "host": "demo",
-        "table": "customer001_orders",
+        "host": "localhost",
+        "port": 5432,
+        "database": "formulahub_wedge",
+        "table": "customers_wedge",
         "if_exists": "replace",
         "demo_output_dir": "data/out/customer001/postgres_demo"
       },
-      "position": { "x": 1700, "y": 80 }
+      "position": { "x": 1900, "y": 80 }
     },
     {
       "id": "rejects",
@@ -146,7 +163,7 @@
         "destination": "data/archive/customer001/",
         "mode": "copy"
       },
-      "position": { "x": 1700, "y": 300 }
+      "position": { "x": 1900, "y": 300 }
     }
   ],
   "edges": [
@@ -156,16 +173,19 @@
     { "id": "e4", "source": "validate", "target": "field_mapper", "sourceHandle": "out" },
     { "id": "e5", "source": "field_mapper", "target": "lookup" },
     { "id": "e6", "source": "lookup", "target": "dedupe" },
-    { "id": "e7", "source": "dedupe", "target": "metrics" },
-    { "id": "e8", "source": "metrics", "target": "dest" },
-    { "id": "e9", "source": "validate", "target": "rejects", "sourceHandle": "rejects" },
-    { "id": "e10", "source": "dest", "target": "archive" }
+    { "id": "e7", "source": "dedupe", "target": "project" },
+    { "id": "e8", "source": "project", "target": "metrics" },
+    { "id": "e9", "source": "metrics", "target": "dest" },
+    { "id": "e10", "source": "validate", "target": "rejects", "sourceHandle": "rejects" },
+    { "id": "e11", "source": "dest", "target": "archive" }
   ],
   "metadata": {
     "demo": true,
     "classification": "LOCAL_ONLY",
     "customer": "customer001",
-    "honesty": "LOCAL filesystem + optional LOCAL Postgres. Not LIVE_EXTERNAL (no SFTP/S3/Snowflake/Databricks).",
+    "honesty": "LOCAL filesystem + optional LOCAL Postgres (formulahub_wedge.customers_wedge). Not LIVE_EXTERNAL.",
+    "mac_db": "formulahub_wedge",
+    "mac_table": "customers_wedge",
     "expected_counts_path": "fixtures/customer001_local_wedge/expected_counts.json"
   }
 }

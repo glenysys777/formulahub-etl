@@ -23,8 +23,8 @@ Usage::
     # DEMO mirror (always safe):
     python3 scripts/customer001_local_wedge.py --mode demo
 
-    # Real local Postgres:
-    FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN='host=127.0.0.1 dbname=formulaetl user=formula password=formula' \\
+    # Real local Postgres (Mac founder defaults — trust / formulahub_wedge):
+    FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN='host=localhost port=5432 dbname=formulahub_wedge' \\
         python3 scripts/customer001_local_wedge.py --mode postgres
 
     # Credential / readiness check only:
@@ -157,26 +157,41 @@ def prepare_fixtures(work_dir: Path | None = None) -> Path:
 
 
 def postgres_env_ready() -> tuple[bool, str, dict[str, Any]]:
-    """Return (ok, reason, config) for real local Postgres."""
+    """Return (ok, reason, config) for real local Postgres.
+
+    Mac founder defaults (trust / local socket)::
+
+        dbname=formulahub_wedge  table=customers_wedge
+        LOCAL_POSTGRES_DSN='host=localhost port=5432 dbname=formulahub_wedge'
+        FORMULAETL_DEMO=0
+    """
     cfg: dict[str, Any] = {
-        "table": os.environ.get("LOCAL_POSTGRES_TABLE") or "customer001_orders",
+        "table": os.environ.get("LOCAL_POSTGRES_TABLE") or "customers_wedge",
         "if_exists": os.environ.get("LOCAL_POSTGRES_IF_EXISTS") or "replace",
     }
     dsn = os.environ.get("LOCAL_POSTGRES_DSN") or os.environ.get("LIVE_POSTGRES_DSN")
     if dsn:
         cfg["dsn"] = dsn
     else:
+        # Mac trust default: localhost TCP without password when PGHOST unset
+        # but LOCAL_POSTGRES_HOST explicitly requested.
         host = os.environ.get("LOCAL_POSTGRES_HOST") or os.environ.get("PGHOST")
         if not host:
-            return False, "LOCAL_POSTGRES_DSN or LOCAL_POSTGRES_HOST not set", cfg
+            # Allow implicit localhost when FORMULAETL_DEMO=0 and user asked postgres mode
+            if os.environ.get("FORMULAETL_DEMO") == "0" or os.environ.get(
+                "LOCAL_POSTGRES_IMPLICIT_LOCALHOST"
+            ) == "1":
+                host = "localhost"
+            else:
+                return False, "LOCAL_POSTGRES_DSN or LOCAL_POSTGRES_HOST not set", cfg
         cfg.update(
             {
                 "host": host,
                 "port": int(os.environ.get("LOCAL_POSTGRES_PORT") or os.environ.get("PGPORT") or "5432"),
                 "database": os.environ.get("LOCAL_POSTGRES_DATABASE")
                 or os.environ.get("PGDATABASE")
-                or "formulaetl",
-                "user": os.environ.get("LOCAL_POSTGRES_USER") or os.environ.get("PGUSER") or "formula",
+                or "formulahub_wedge",
+                "user": os.environ.get("LOCAL_POSTGRES_USER") or os.environ.get("PGUSER") or "",
                 "password": os.environ.get("LOCAL_POSTGRES_PASSWORD")
                 or os.environ.get("PGPASSWORD")
                 or os.environ.get("FORMULAETL_POSTGRES_PASSWORD")
@@ -189,15 +204,37 @@ def postgres_env_ready() -> tuple[bool, str, dict[str, Any]]:
 
         dsn_str = cfg.get("dsn")
         if not dsn_str:
-            dsn_str = (
-                f"host={cfg['host']} port={cfg['port']} dbname={cfg['database']} "
-                f"user={cfg['user']} password={cfg.get('password') or ''}"
-            )
+            user = cfg.get("user") or ""
+            password = cfg.get("password") or ""
+            # Omit empty user/password so trust/peer/socket auth works on Mac
+            parts = [
+                f"host={cfg['host']}",
+                f"port={cfg['port']}",
+                f"dbname={cfg['database']}",
+            ]
+            if user:
+                parts.append(f"user={user}")
+            if password:
+                parts.append(f"password={password}")
+            dsn_str = " ".join(parts)
         with psycopg.connect(dsn_str, connect_timeout=3) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 cur.fetchone()
-        return True, "postgres reachable", cfg
+                # Ensure customers_wedge exists (idempotent)
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS customers_wedge (
+                        customer_id text NOT NULL,
+                        email text,
+                        signup_date text,
+                        loaded_at text,
+                        PRIMARY KEY (customer_id)
+                    )
+                    """
+                )
+            conn.commit()
+        return True, "postgres reachable (formulahub_wedge)", cfg
     except Exception as exc:  # noqa: BLE001 — readiness probe
         return False, f"postgres unreachable: {exc}", cfg
 
@@ -371,11 +408,17 @@ def run_wedge(
 
             dsn = pg_cfg.get("dsn") if pg_cfg else None
             if not dsn and pg_cfg:
-                dsn = (
-                    f"host={pg_cfg['host']} port={pg_cfg['port']} dbname={pg_cfg['database']} "
-                    f"user={pg_cfg['user']} password={pg_cfg.get('password') or ''}"
-                )
-            table = (pg_cfg or {}).get("table") or "customer001_orders"
+                parts = [
+                    f"host={pg_cfg['host']}",
+                    f"port={pg_cfg['port']}",
+                    f"dbname={pg_cfg['database']}",
+                ]
+                if pg_cfg.get("user"):
+                    parts.append(f"user={pg_cfg['user']}")
+                if pg_cfg.get("password"):
+                    parts.append(f"password={pg_cfg['password']}")
+                dsn = " ".join(parts)
+            table = (pg_cfg or {}).get("table") or "customers_wedge"
             with psycopg.connect(dsn) as conn:
                 with conn.cursor() as cur:
                     cur.execute(f'SELECT COUNT(*) FROM "{table}"')

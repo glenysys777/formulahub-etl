@@ -1,4 +1,4 @@
-.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql demo-customer001 customer001-wedge customer001-wedge-pg customer001-fail-injects api worker web build docker-up docker-down lint desktop desktop-install desktop-lint dist-mac mac-pack
+.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql demo-customer001 customer001-wedge customer001-wedge-pg customer001-fail-injects demo-local-postgres api worker web build docker-up docker-down lint desktop desktop-install desktop-lint dist-mac mac-pack
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -91,10 +91,25 @@ demo-customer001: seed
 
 customer001-wedge: demo-customer001
 
-# Real local Postgres (Mac/CI service). Requires LOCAL_POSTGRES_DSN + FORMULAETL_DEMO=0.
+# Real local Postgres (Mac founder: formulahub_wedge / customers_wedge; FORMULAETL_DEMO=0).
+LOCAL_POSTGRES_DSN ?= host=localhost port=5432 dbname=formulahub_wedge
+LOCAL_POSTGRES_TABLE ?= customers_wedge
+
 customer001-wedge-pg: seed
 	FORMULAETL_DEMO=0 FORMULAETL_WORK_DIR=$(ROOT) \
+	LOCAL_POSTGRES_DSN="$(LOCAL_POSTGRES_DSN)" \
+	LOCAL_POSTGRES_TABLE="$(LOCAL_POSTGRES_TABLE)" \
 		python3 scripts/customer001_local_wedge.py --mode postgres
+
+# LOCAL_PROVEN retargets of flagship demos (files + formulahub_wedge — not LIVE_EXTERNAL)
+demo-local-postgres: seed
+	@echo "Requires FORMULAETL_DEMO=0 and local Postgres (see scripts/START-POSTGRES.command)"
+	FORMULAETL_DEMO=0 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 -m formulaetl.cli run demos/s3-pgp-snowflake/pipeline.local-postgres.json
+	FORMULAETL_DEMO=0 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 -m formulaetl.cli run demos/core-path/pipeline.local-postgres.json
+	FORMULAETL_DEMO=0 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.local-postgres.json
 
 customer001-fail-injects: seed
 	bash scripts/customer001_fail_injections/run_all.sh

@@ -49,11 +49,15 @@ def test_pipeline_json_shape():
         "tmap",
         "lookup_join",
         "dedupe",
+        "tmap",  # project → customers_wedge columns
         "logger_metrics",
         "postgres_destination",
         "local_file_destination",
         "archive_files",
     ]
+    dest = next(n for n in pipe["nodes"] if n["id"] == "dest")
+    assert dest["config"].get("database") == "formulahub_wedge"
+    assert dest["config"].get("table") == "customers_wedge"
     assert pipe["metadata"].get("live_wedge") is not True
     assert pipe["metadata"]["classification"] in ("LOCAL_ONLY", "LOCAL/DEMO", "LOCAL_PROVEN")
     assert pipe["metadata"]["classification"] != "LIVE_EXTERNAL"

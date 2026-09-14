@@ -1,6 +1,6 @@
 # CUSTOMER_001 — Production evidence matrix (PROVE+SELL)
 
-**Audited tip:** `1549d6d` (`origin/main` + LOCAL wedge PR, 2026-09-14)  
+**Audited tip:** `1549d6d` (`origin/main`) + LOCAL wedge PR (2026-09-14)  
 **Mission:** Honest production-evidence for design-partner sell. **Never claim LIVE proven from `FORMULAETL_DEMO=1`.**  
 **Sources:** code under `packages/runner`, `packages/api`, demos, `tests/`, and prior audits (`PRODUCTION_READINESS.md`, `PRODUCTION_EVIDENCE.md`, `CURRENT_STATE_MATRIX.md`). Sales copy is **not** evidence.
 
