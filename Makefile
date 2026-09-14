@@ -52,6 +52,10 @@ demo-s3-databricks: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
 		python3 -m formulaetl.cli run demos/s3-databricks/pipeline.json
 
+demo-lookup-join: seed
+	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.json
+
 api: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
 		python3 -m uvicorn formulaetl_api.main:app --host 0.0.0.0 --port 18765 --app-dir packages/api

@@ -26,7 +26,7 @@ Drag-and-drop pipelines your team can own — React canvas, Python runner, JSON/
 | **Own the pipeline** | Visual DAG on a React Flow canvas; definitions as JSON/YAML you can version in Git. |
 | **Modern stack** | Lightweight Python runner + component SDK — no Spark required for everyday file/API/SFTP/DB jobs. |
 | **AI Build** | Describe the flow in English → get a pipeline graph (offline heuristic; optional BYO LLM key). |
-| **Field Mapper** | Discover schema, drag columns, expression maps (`out=expr`) — MVP visual mapping, not a black box. |
+| **Field Mapper** | Discover schema · **Input / Variables / Output** panes · expression maps (`out=expr`) — Variables sit between input and output. |
 | **Run anywhere** | Local Makefile or Docker Compose self-host. Demo mode mocks cloud so anyone can run end-to-end. |
 | **Open-core honesty** | Community free forever (Apache 2.0). Cloud and Enterprise layers planned — we say what’s shipped vs roadmap. |
 
@@ -49,7 +49,7 @@ Drag-and-drop pipelines your team can own — React canvas, Python runner, JSON/
 
 **Sources:** S3, local file, Excel, HTTP/API, SFTP, Postgres, MySQL, SQLite  
 **Parse & map:** CSV / JSON / XML parsers · Schema Map · **Field Mapper**  
-**Transform & quality:** Transform · Schema Validate · Filter · Sort · Aggregate · Dedupe · Lookup Join · Python Row · PGP encrypt/decrypt  
+**Transform & quality:** Transform · Schema Validate · Filter · Sort · Aggregate · Dedupe · Lookup Join (left/inner/right/full) · Python Row · PGP encrypt/decrypt  
 **Destinations & ops:** Local file · Excel · Snowflake · SFTP · Postgres · MySQL · SQLite · Archive · Logger/Metrics  
 
 MVP catalog — not a 200-connector suite. Demo mode mocks S3, SFTP, Snowflake, and some DB wires so you can try without cloud accounts. See the [component catalog](./COMPONENTS.md) for honest limits.
@@ -60,7 +60,7 @@ MVP catalog — not a 200-connector suite. Demo mode mocks S3, SFTP, Snowflake, 
 
 **AI Pipeline Builder** — Paste English (“S3 CSV → validate → Snowflake”) → nodes and edges appear. Works offline with heuristics; optional `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` for richer builds.
 
-**Field Mapper** — Discover schema from source sample → drag source → target columns → expression mappings, optional filter, `drop_unmapped`. Mappings persist in node config. **MVP:** visual column mapping — not a multi-output lookup IDE.
+**Field Mapper** — Discover schema from source sample → **Input · Variables · Output** → drag links → expression mappings, optional filter, `drop_unmapped`. Variables and mappings persist in node config. To merge two streams, wire them into **Lookup Join** first.
 
 Together: prompt a starting graph, then refine maps and validation before you run.
 

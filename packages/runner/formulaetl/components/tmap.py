@@ -1,6 +1,7 @@
-"""Field Mapper — expression-based column mappings + optional filter.
+"""Field Mapper — Variables (middle) + expression-based output mappings + optional filter.
 
-Not a full visual tMap IDE — enough for demos: out=expr mappings, filter_expr, drop_unmapped.
+Variables are named intermediate expressions evaluated before output mappings.
+Outputs may reference variable names. Internal component_type remains ``tmap``.
 """
 
 from __future__ import annotations
@@ -174,28 +175,54 @@ def eval_expr(expr: str, row: dict[str, Any]) -> Any:
     return _eval(tree, row, row)
 
 
-def _parse_mappings(raw: Any) -> list[tuple[str, str]]:
-    lines: list[str] = []
+def _parse_name_expr_list(raw: Any) -> list[tuple[str, str]]:
+    """Parse ``name=expr`` lines, dicts, or ``{name, expr}`` objects."""
     if raw is None:
         return []
     if isinstance(raw, dict):
-        return [(str(k), str(v)) for k, v in raw.items()]
+        # Flat name→expr map (not a single {name, expr} object)
+        if "name" in raw and "expr" in raw and len(raw) <= 3:
+            name, expr = str(raw["name"]).strip(), str(raw["expr"]).strip()
+            return [(name, expr)] if name and expr else []
+        return [(str(k), str(v)) for k, v in raw.items() if str(k).strip() and str(v).strip()]
+
+    items: list[Any]
     if isinstance(raw, str):
-        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        items = [ln.strip() for ln in raw.splitlines() if ln.strip()]
     elif isinstance(raw, list):
-        lines = [str(x).strip() for x in raw if str(x).strip()]
-    mappings: list[tuple[str, str]] = []
-    for line in lines:
+        items = list(raw)
+    else:
+        return []
+
+    result: list[tuple[str, str]] = []
+    for item in items:
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("key") or "").strip()
+            expr = str(item.get("expr") or item.get("expression") or item.get("value") or "").strip()
+            if name and expr:
+                result.append((name, expr))
+            continue
+        line = str(item).strip()
+        if not line:
+            continue
         if "=" in line:
-            out, expr = line.split("=", 1)
+            name, expr = line.split("=", 1)
         elif ":" in line:
-            out, expr = line.split(":", 1)
+            name, expr = line.split(":", 1)
         else:
             continue
-        out, expr = out.strip(), expr.strip()
-        if out and expr:
-            mappings.append((out, expr))
-    return mappings
+        name, expr = name.strip(), expr.strip()
+        if name and expr:
+            result.append((name, expr))
+    return result
+
+
+def _parse_mappings(raw: Any) -> list[tuple[str, str]]:
+    return _parse_name_expr_list(raw)
+
+
+def _parse_variables(raw: Any) -> list[tuple[str, str]]:
+    return _parse_name_expr_list(raw)
 
 
 @register
@@ -211,6 +238,14 @@ class TMap(BaseComponent):
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "out=expr lines, e.g. name_up=upper(name), total=amount*1.1",
+            },
+            "variables": {
+                "type": "array",
+                "description": (
+                    "Named intermediate expressions evaluated before output mappings. "
+                    "Accepts 'name=expr' strings or {name, expr} objects. "
+                    "Outputs may reference variable names."
+                ),
             },
             "filter_expr": {
                 "type": "string",
@@ -230,11 +265,25 @@ class TMap(BaseComponent):
     }
     parameters = [
         {
+            "key": "variables",
+            "label": "Variables",
+            "type": "string_list",
+            "required": False,
+            "help": (
+                "Middle-layer named expressions (Input → Variables → Output). "
+                "One per line: full_name=upper(first)+' '+last. Output mappings can reference these names."
+            ),
+            "placeholder": "full_name=upper(first)+' '+last",
+        },
+        {
             "key": "mappings",
-            "label": "Mappings",
+            "label": "Output mappings",
             "type": "string_list",
             "required": True,
-            "help": "One per line: out=expr — e.g. name_up=upper(name), total=amount*1.1, x=coalesce(a,b)",
+            "help": (
+                "Column logic: out=expr — e.g. name_up=upper(name), total=amount*1.1. "
+                "Can reference Variables by name. For merging two sources, use Lookup Join first."
+            ),
             "placeholder": "total=amount*1.1",
         },
         {
@@ -242,7 +291,7 @@ class TMap(BaseComponent):
             "label": "Filter expression",
             "type": "string",
             "required": False,
-            "help": "Optional keep-when-true expression (evaluated on input row before/with mapping)",
+            "help": "Optional keep-when-true expression (sees input columns and Variables)",
             "placeholder": "status == 'shipped'",
         },
         {
@@ -269,7 +318,8 @@ class TMap(BaseComponent):
             rows = rows or []
             mappings = _parse_mappings(self.config.get("mappings"))
             if not mappings:
-                raise ValueError("tMap: mappings required (out=expr)")
+                raise ValueError("Field Mapper: mappings required (out=expr)")
+            variables = _parse_variables(self.config.get("variables"))
             filter_expr = (self.config.get("filter_expr") or "").strip() or None
             drop_unmapped = bool(self.config.get("drop_unmapped", False))
             reject_unmatched = bool(self.config.get("reject_unmatched", False))
@@ -278,15 +328,24 @@ class TMap(BaseComponent):
             rejects: list[dict[str, Any]] = []
 
             for row in rows:
+                # Evaluate Variables into an enriched env (input cols + vars)
+                env: dict[str, Any] = dict(row)
+                for var_name, expr in variables:
+                    try:
+                        env[var_name] = eval_expr(expr, env)
+                    except Exception as exc:
+                        env[var_name] = None
+                        ctx.emit(f"Field Mapper: variable failed for {var_name}={expr!r}: {exc}")
+
                 if filter_expr:
                     try:
-                        ok = bool(eval_expr(filter_expr, row))
+                        ok = bool(eval_expr(filter_expr, env))
                     except Exception:
                         ok = False
                     if not ok:
                         if reject_unmatched:
                             r = dict(row)
-                            r["_reject_reason"] = f"tmap filter failed: {filter_expr}"
+                            r["_reject_reason"] = f"Field Mapper filter failed: {filter_expr}"
                             rejects.append(r)
                         continue
 
@@ -297,7 +356,7 @@ class TMap(BaseComponent):
 
                 for out_col, expr in mappings:
                     try:
-                        new_row[out_col] = eval_expr(expr, row)
+                        new_row[out_col] = eval_expr(expr, env)
                     except Exception as exc:
                         new_row[out_col] = None
                         ctx.emit(f"Field Mapper: expr failed for {out_col}={expr!r}: {exc}")
@@ -308,8 +367,8 @@ class TMap(BaseComponent):
             metrics.rows_out = len(kept)
             metrics.rows_rejected = len(rejects)
             ctx.emit(
-                f"Field Mapper: {len(mappings)} mappings, kept {len(kept)}/{len(rows)} "
-                f"(filter={filter_expr!r}, drop_unmapped={drop_unmapped})"
+                f"Field Mapper: {len(variables)} vars, {len(mappings)} mappings, "
+                f"kept {len(kept)}/{len(rows)} (filter={filter_expr!r}, drop_unmapped={drop_unmapped})"
             )
 
         return ComponentResult(rows=kept, rejects=rejects, metrics=metrics)

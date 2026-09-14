@@ -36,7 +36,7 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 | JSON Parser | `json_parser` | Array / path / `json_path` → rows |
 | XML Parser | `xml_parser` | Record tag / xpath-lite → rows |
 | Schema Map | `column_map` | Rename / simple column map; **Field Mapper** UI |
-| **Field Mapper** | Field Mapper node | Expression mappings (`out=expr`), optional filter, `drop_unmapped`; visual drag source → target; Discover schema. **MVP** — not a multi-output lookup canvas IDE |
+| **Field Mapper** | Field Mapper node | **Input · Variables · Output** canvas: named intermediate expressions + `out=expr` mappings, optional filter, `drop_unmapped`; Discover schema; Variables persist in node config |
 
 ### Transform & quality
 
@@ -48,7 +48,7 @@ For client conversations: what ships now, what demo mode mocks, and what is road
 | Sort Rows | `sort` | Keys as `col:asc` / `col:desc` |
 | Aggregate | `aggregate` | `group_by` + sum / count / min / max / avg |
 | Dedupe | `dedupe` | Keep first / last on keys |
-| Lookup Join | `lookup_join` | Left / inner on keys; file or second input |
+| Lookup Join | `lookup_join` | Join types: **left / inner / right / full**; match mode **all** (one-to-many) or **first**; file or second input on the **right** handle |
 | Python Row | `python_row` | Per-row or batch **sandboxed Python** (row/rows + safe builtins; no open / network / os) |
 | PGP Decrypt / Encrypt | `pgp_decrypt` / `pgp_encrypt` | Demo keys under `fixtures/keys/` |
 
@@ -91,17 +91,27 @@ The left **Components** palette lists every registered type from `GET /api/compo
 - **New blank** starts an empty pipeline so users can build API → map → transform → load without AI Build or Load demo
 - AI Build and Load demo remain shortcuts; the palette is the main manual path
 
-## Visual Field Mapper — MVP (now)
+## Visual Field Mapper — Input · Variables · Output
 
 What data engineers expect when mapping columns:
 
 1. **Read schema** from connection / sample  
-2. Show **all columns** from that schema  
-3. **Editable + drag-and-drop** mapping (source → target)
+2. Show **all input columns** from that schema  
+3. **Variables** middle pane — named intermediate expressions (reference input cols; outputs reference vars)  
+4. **Editable + drag-and-drop** mapping (input → var → output)
 
-**Shipped:** Discover + Field Mapper + auto-map by name + expression text for non-trivial `out=expr`.
+**Shipped:** Near-fullscreen 3-pane Field Mapper + Discover + auto-map by name + Variables persistence + expression text for `out=expr`.
 
-**Not claiming:** full multi-output visual mapper IDE, lookup-join canvas designer, or Spark-scale mapper.
+**Not claiming:** multi-output reject/lookup IDE tabs, or Spark-scale mapper.
+
+### Lookup Join — wiring two sources
+
+1. Drop **Lookup Join** on the canvas (two target handles: **left/in** = primary, **right** = lookup).  
+2. Wire source A → left/in, source B → right (or set Lookup file instead of B).  
+3. Set **Primary (left) join keys** and **Lookup (right) join keys**, choose **Join type** (`left` / `inner` / `right` / `full`) and **Match mode** (`all` / `first`).  
+4. Optionally chain **Field Mapper** for Variables + output column logic.
+
+**Field Mapper** does column/expression logic — it does **not** merge two streams; use Lookup Join for that.
 
 ---
 
@@ -117,7 +127,7 @@ What data engineers expect when mapping columns:
 
 | Gap | Status |
 |-----|--------|
-| Advanced multi-output visual mapper IDE | Field Mapper MVP shipped; advanced IDE later |
+| Advanced multi-output visual mapper IDE | Field Mapper 3-pane (Input/Variables/Output) shipped; multi-output reject tabs later |
 | Spark / Big Data batch engine | Explicitly out of Community MVP — use **Databricks Job** to trigger *their* jobs |
 | Joblets, shared contexts, enterprise lineage UI | Enterprise tier *(planned)* |
 | Full JDBC catalog (Oracle, SQL Server, …) | After Postgres / MySQL pattern |
@@ -131,14 +141,15 @@ What data engineers expect when mapping columns:
 
 1. **Kafka → Databricks** — `demos/api-kafka-databricks` (fixture Kafka → Field Mapper → Databricks Job demo)
 2. **S3 → Databricks** — `demos/s3-databricks` (S3 mock → Databricks Job trigger)
-3. **Core path** — Excel → Field Mapper → Filter → Sort → Aggregate → File
-4. `demos/excel-to-file` — Excel → Schema Map → Transform → File  
-5. `demos/python-row-flex` — API → map → Python Row → File  
-6. `demos/s3-pgp-snowflake` — S3 → PGP → Validate → Snowflake demo → Archive  
-7. Existing Excel, SFTP, Postgres, API demos under `demos/`
+3. **Lookup + Variables** — `demos/lookup-join-mapper` — two CSV sources → Lookup Join → Field Mapper (Variables) → File
+4. **Core path** — Excel → Field Mapper → Filter → Sort → Aggregate → File
+5. `demos/excel-to-file` — Excel → Schema Map → Transform → File  
+6. `demos/python-row-flex` — API → map → Python Row → File  
+7. `demos/s3-pgp-snowflake` — S3 → PGP → Validate → Snowflake demo → Archive  
+8. Existing Excel, SFTP, Postgres, API demos under `demos/`
 
 ## Open-core honesty
 
-- **OSS core stays:** visual canvas, runner, Kafka Source, Databricks Job orchestration, Community scheduler, AI Build shortcut  
+- **OSS core stays:** visual canvas, runner, Field Mapper Variables, Lookup Join, Kafka Source, Databricks Job orchestration, Community scheduler, AI Build shortcut  
 - **Enterprise locks later *(planned)*:** SSO, RBAC, lineage UI, HA scheduler — no fabricated prices  
 - Icons are **original SVG/CSS** with text labels (S3 Source, Kafka Source, Databricks Job) — never official AWS / Kafka / Databricks trademark logo assets

@@ -1,0 +1,105 @@
+{
+  "id": "demo-lookup-join-mapper",
+  "name": "Two sources → Lookup Join → Field Mapper → CSV",
+  "description": "Orders + customers merge via Lookup Join (left), then Field Mapper Variables (full_name, total) → CSV. Wire primary→left/in and lookup→right.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "orders",
+      "type": "local_file_source",
+      "label": "Orders CSV",
+      "config": {
+        "path": "fixtures/sample/orders_17cols.csv",
+        "format": "csv"
+      },
+      "position": { "x": 40, "y": 120 }
+    },
+    {
+      "id": "customers",
+      "type": "local_file_source",
+      "label": "Customers CSV",
+      "config": {
+        "path": "fixtures/sample/customers.csv",
+        "format": "csv"
+      },
+      "position": { "x": 40, "y": 280 }
+    },
+    {
+      "id": "join",
+      "type": "lookup_join",
+      "label": "Lookup Join",
+      "config": {
+        "left_keys": ["customer_id"],
+        "right_keys": ["customer_id"],
+        "how": "left",
+        "match": "first"
+      },
+      "position": { "x": 320, "y": 180 }
+    },
+    {
+      "id": "field_mapper",
+      "type": "tmap",
+      "label": "Field Mapper",
+      "config": {
+        "variables": [
+          "full_name=upper(customer_name)",
+          "total=float(quantity)*float(unit_price)"
+        ],
+        "mappings": [
+          "order_id=order_id",
+          "customer_id=customer_id",
+          "full_name=full_name",
+          "segment=segment",
+          "region=region",
+          "total=total",
+          "status=lower(status)"
+        ],
+        "drop_unmapped": true
+      },
+      "position": { "x": 560, "y": 180 }
+    },
+    {
+      "id": "dest",
+      "type": "local_file_destination",
+      "label": "Joined CSV",
+      "config": {
+        "path": "data/out/lookup_join_mapper.csv",
+        "format": "csv"
+      },
+      "position": { "x": 820, "y": 180 }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-orders-join",
+      "source": "orders",
+      "target": "join",
+      "sourceHandle": "out",
+      "targetHandle": "in"
+    },
+    {
+      "id": "e-customers-join",
+      "source": "customers",
+      "target": "join",
+      "sourceHandle": "out",
+      "targetHandle": "right"
+    },
+    {
+      "id": "e-join-map",
+      "source": "join",
+      "target": "field_mapper",
+      "sourceHandle": "out"
+    },
+    {
+      "id": "e-map-dest",
+      "source": "field_mapper",
+      "target": "dest",
+      "sourceHandle": "out"
+    }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "lookup-join-mapper"
+  }
+}

@@ -15,6 +15,12 @@ export type MappingRow = {
   type: string;
 };
 
+export type VariableRow = {
+  id: string;
+  name: string;
+  expr: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -31,9 +37,10 @@ type Col = { name: string; type: string; required?: boolean };
 type LinkPath = {
   id: string;
   d: string;
-  source: string;
-  target: string;
+  kind: "in-out" | "in-var" | "var-out";
 };
+
+type DragKind = "input" | "var";
 
 function uid() {
   return `m_${Math.random().toString(36).slice(2, 9)}`;
@@ -49,7 +56,7 @@ function uiComponentLabel(type: string, label?: string | null): string {
   return label || type;
 }
 
-/** Parse column_map "old:new" or tmap "out=expr" into mapping rows. */
+/** Parse column_map "old:new" or Field Mapper "out=expr" into mapping rows. */
 export function parseExistingMappings(
   componentType: string,
   config: Record<string, unknown>,
@@ -86,7 +93,6 @@ export function parseExistingMappings(
       const colMatch = expr.match(/^col\(\s*["']([^"']+)["']\s*\)$/);
       if (colMatch) source = colMatch[1];
       else if (isIdent(expr)) source = expr;
-      // Keep complex expressions (int(col("X")), upper(...)) intact for round-trip
       rows.push({ id: uid(), source, target: out, type: "string" });
     } else {
       let sep: string | null = null;
@@ -106,9 +112,52 @@ export function parseExistingMappings(
   return rows;
 }
 
+export function parseExistingVariables(config: Record<string, unknown>): VariableRow[] {
+  const raw = config.variables;
+  if (!raw) return [];
+  const items: unknown[] = [];
+  if (typeof raw === "string") {
+    items.push(...raw.split(/\n/).map((s) => s.trim()).filter(Boolean));
+  } else if (Array.isArray(raw)) {
+    items.push(...raw);
+  } else if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    if ("name" in obj && ("expr" in obj || "expression" in obj)) {
+      items.push(obj);
+    } else {
+      for (const [k, v] of Object.entries(obj)) {
+        items.push({ name: k, expr: String(v) });
+      }
+    }
+  }
+
+  const rows: VariableRow[] = [];
+  for (const item of items) {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const o = item as Record<string, unknown>;
+      const name = String(o.name || o.key || "").trim();
+      const expr = String(o.expr || o.expression || o.value || "").trim();
+      if (name && expr) rows.push({ id: uid(), name, expr });
+      continue;
+    }
+    const line = String(item).trim();
+    if (!line) continue;
+    let name = "";
+    let expr = "";
+    if (line.includes("=")) [name, expr] = line.split("=", 2);
+    else if (line.includes(":")) [name, expr] = line.split(":", 2);
+    else continue;
+    name = name.trim();
+    expr = expr.trim();
+    if (name && expr) rows.push({ id: uid(), name, expr });
+  }
+  return rows;
+}
+
 function mappingsToConfig(
   componentType: string,
   rows: MappingRow[],
+  variables: VariableRow[],
   prev: Record<string, unknown>,
 ): Record<string, unknown> {
   if (componentType === "tmap") {
@@ -125,7 +174,13 @@ function mappingsToConfig(
         if (isIdent(src)) return `${tgt}=${src}`;
         return `${tgt}=col(${JSON.stringify(src)})`;
       });
-    return { ...prev, mappings };
+    const vars = variables
+      .filter((v) => v.name.trim() && v.expr.trim())
+      .map((v) => `${v.name.trim()}=${v.expr.trim()}`);
+    const next: Record<string, unknown> = { ...prev, mappings };
+    if (vars.length) next.variables = vars;
+    else delete next.variables;
+    return next;
   }
   const mappings = rows
     .filter((r) => r.source.trim() && r.target.trim())
@@ -169,7 +224,6 @@ function findUpstreamSource(
   return null;
 }
 
-
 function extractSourceCol(source: string): string {
   const simple = source.match(/^col\(\s*["']([^"']+)["']\s*\)$/);
   if (simple) return simple[1];
@@ -177,6 +231,48 @@ function extractSourceCol(source: string): string {
   if (nested) return nested[1];
   if (isIdent(source)) return source;
   return source;
+}
+
+/** Column / ident names referenced by a simple expression (best-effort for arrows). */
+function referencedIdents(expr: string): string[] {
+  const s = expr.trim();
+  if (!s) return [];
+  const out: string[] = [];
+  const colRe = /col\(\s*["']([^"']+)["']\s*\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = colRe.exec(s))) out.push(m[1]);
+  if (isIdent(s)) out.push(s);
+  else {
+    const idRe = /\b([A-Za-z_][A-Za-z0-9_]*)\b/g;
+    const reserved = new Set([
+      "upper",
+      "lower",
+      "str",
+      "int",
+      "float",
+      "len",
+      "coalesce",
+      "abs",
+      "round",
+      "min",
+      "max",
+      "col",
+      "row",
+      "True",
+      "False",
+      "None",
+      "and",
+      "or",
+      "not",
+      "in",
+      "if",
+      "else",
+    ]);
+    while ((m = idRe.exec(s))) {
+      if (!reserved.has(m[1])) out.push(m[1]);
+    }
+  }
+  return [...new Set(out)];
 }
 
 function slugifyTarget(name: string): string {
@@ -203,15 +299,18 @@ export function SchemaMapper({
   edges,
   onApply,
 }: Props) {
+  const isFieldMapper = componentType === "tmap";
   const [sourceCols, setSourceCols] = useState<Col[]>([]);
   const [rows, setRows] = useState<MappingRow[]>([]);
+  const [variables, setVariables] = useState<VariableRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sourceQuery, setSourceQuery] = useState("");
+  const [varQuery, setVarQuery] = useState("");
   const [targetQuery, setTargetQuery] = useState("");
   const [hoverId, setHoverId] = useState<string | null>(null);
-  const [dragSource, setDragSource] = useState<string | null>(null);
+  const [drag, setDrag] = useState<{ kind: DragKind; key: string } | null>(null);
   const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
     null,
   );
@@ -220,14 +319,18 @@ export function SchemaMapper({
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const sourcePaneRef = useRef<HTMLDivElement>(null);
+  const varPaneRef = useRef<HTMLDivElement>(null);
   const targetPaneRef = useRef<HTMLDivElement>(null);
   const sourceHandleRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const varInHandleRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const varOutHandleRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const targetHandleRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   const initFromConfig = useCallback(() => {
     const parsed = parseExistingMappings(componentType, config);
     setRows(parsed);
-    // Seed source columns from existing mappings so arrows are visible without Discover
+    const vars = isFieldMapper ? parseExistingVariables(config) : [];
+    setVariables(vars);
     const seeded: Col[] = [];
     const seen = new Set<string>();
     for (const r of parsed) {
@@ -237,8 +340,16 @@ export function SchemaMapper({
         seeded.push({ name: colName, type: r.type || "string" });
       }
     }
+    for (const v of vars) {
+      for (const ref of referencedIdents(v.expr)) {
+        if (!seen.has(ref) && !vars.some((x) => x.name === ref)) {
+          seen.add(ref);
+          seeded.push({ name: ref, type: "string" });
+        }
+      }
+    }
     if (seeded.length) setSourceCols(seeded);
-  }, [componentType, config]);
+  }, [componentType, config, isFieldMapper]);
 
   useEffect(() => {
     if (open) {
@@ -246,9 +357,10 @@ export function SchemaMapper({
       setError(null);
       setInfo(null);
       setSourceQuery("");
+      setVarQuery("");
       setTargetQuery("");
       setHoverId(null);
-      setDragSource(null);
+      setDrag(null);
       setDraft(null);
       setSelectedPathId(null);
     }
@@ -268,7 +380,11 @@ export function SchemaMapper({
       }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedPathId && !editing) {
         e.preventDefault();
-        setRows((prev) => prev.filter((r) => r.id !== selectedPathId));
+        if (selectedPathId.startsWith("var_")) {
+          setVariables((prev) => prev.filter((v) => `var_${v.id}` !== selectedPathId));
+        } else {
+          setRows((prev) => prev.filter((r) => r.id !== selectedPathId));
+        }
         setSelectedPathId(null);
       }
     };
@@ -339,7 +455,6 @@ export function SchemaMapper({
           type: c.type,
         }));
       }
-      // Ensure every source has a mapping
       const next = [...prev];
       const mappedSrc = new Set(next.map((r) => r.source).filter(Boolean));
       for (const c of sourceCols) {
@@ -379,13 +494,29 @@ export function SchemaMapper({
     ]);
   };
 
+  const addVariable = () => {
+    setVariables((prev) => [
+      ...prev,
+      { id: uid(), name: `var_${prev.length + 1}`, expr: "" },
+    ]);
+  };
+
   const removeRow = (id: string) => {
     setRows((prev) => prev.filter((r) => r.id !== id));
     setSelectedPathId((cur) => (cur === id ? null : cur));
   };
 
+  const removeVariable = (id: string) => {
+    setVariables((prev) => prev.filter((v) => v.id !== id));
+    setSelectedPathId((cur) => (cur === `var_${id}` ? null : cur));
+  };
+
   const updateRow = (id: string, patch: Partial<MappingRow>) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+
+  const updateVariable = (id: string, patch: Partial<VariableRow>) => {
+    setVariables((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
   };
 
   const linkSourceToTarget = (sourceName: string, targetRowId: string) => {
@@ -399,10 +530,27 @@ export function SchemaMapper({
     );
   };
 
+  const linkVarToTarget = (varName: string, targetRowId: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.id === targetRowId ? { ...r, source: varName } : r)),
+    );
+  };
+
+  const linkSourceToVar = (sourceName: string, varId: string) => {
+    setVariables((prev) =>
+      prev.map((v) => {
+        if (v.id !== varId) return v;
+        const ident = isIdent(sourceName) ? sourceName : `col(${JSON.stringify(sourceName)})`;
+        if (!v.expr.trim()) return { ...v, expr: ident };
+        if (referencedIdents(v.expr).includes(sourceName) || v.expr.includes(sourceName)) return v;
+        return { ...v, expr: `${v.expr}+${ident}` };
+      }),
+    );
+  };
+
   const linkSourceCreate = (sourceName: string) => {
     const col = sourceCols.find((c) => c.name === sourceName);
     setRows((prev) => {
-      // If a target already exists with slug name and empty source, fill it
       const slug = slugifyTarget(sourceName);
       const empty = prev.find((r) => !r.source && (r.target === slug || !r.target));
       if (empty) {
@@ -412,7 +560,6 @@ export function SchemaMapper({
             : r,
         );
       }
-      // Avoid duplicate source→same target
       if (prev.some((r) => r.source === sourceName && r.target === slug)) return prev;
       return [
         ...prev,
@@ -427,15 +574,27 @@ export function SchemaMapper({
   };
 
   const handleApply = () => {
-    const next = mappingsToConfig(componentType, rows, config);
+    const next = mappingsToConfig(componentType, rows, variables, config);
     onApply(next);
     onClose();
   };
 
-  const mappedSources = useMemo(
-    () => new Set(rows.map((r) => extractSourceCol(r.source)).filter(Boolean)),
-    [rows],
-  );
+  const varNames = useMemo(() => new Set(variables.map((v) => v.name).filter(Boolean)), [variables]);
+
+  const mappedSources = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) {
+      for (const ref of referencedIdents(r.source)) {
+        if (!varNames.has(ref)) s.add(ref);
+      }
+    }
+    for (const v of variables) {
+      for (const ref of referencedIdents(v.expr)) {
+        if (!varNames.has(ref)) s.add(ref);
+      }
+    }
+    return s;
+  }, [rows, variables, varNames]);
 
   const filteredSources = useMemo(() => {
     const q = sourceQuery.trim().toLowerCase();
@@ -444,6 +603,14 @@ export function SchemaMapper({
       (c) => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q),
     );
   }, [sourceCols, sourceQuery]);
+
+  const filteredVars = useMemo(() => {
+    const q = varQuery.trim().toLowerCase();
+    if (!q) return variables;
+    return variables.filter(
+      (v) => v.name.toLowerCase().includes(q) || v.expr.toLowerCase().includes(q),
+    );
+  }, [variables, varQuery]);
 
   const filteredRows = useMemo(() => {
     const q = targetQuery.trim().toLowerCase();
@@ -464,48 +631,100 @@ export function SchemaMapper({
     }
     const br = body.getBoundingClientRect();
     const next: LinkPath[] = [];
-    for (const r of rows) {
-      if (!r.source || !r.target) continue;
-      // Only draw if both ends are currently visible in filtered lists
-      const srcKey = extractSourceCol(r.source);
-      const srcEl = sourceHandleRefs.current.get(srcKey);
-      const tgtEl = targetHandleRefs.current.get(r.id);
-      if (!srcEl || !tgtEl) continue;
-      const sr = srcEl.getBoundingClientRect();
-      const tr = tgtEl.getBoundingClientRect();
-      const x1 = sr.left + sr.width / 2 - br.left;
-      const y1 = sr.top + sr.height / 2 - br.top;
-      const x2 = tr.left + tr.width / 2 - br.left;
-      const y2 = tr.top + tr.height / 2 - br.top;
-      next.push({
-        id: r.id,
-        source: srcKey,
-        target: r.target,
-        d: bezierPath(x1, y1, x2, y2),
-      });
+
+    const mid = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      return {
+        x: r.left + r.width / 2 - br.left,
+        y: r.top + r.height / 2 - br.top,
+      };
+    };
+
+    if (isFieldMapper) {
+      for (const v of variables) {
+        for (const ref of referencedIdents(v.expr)) {
+          if (varNames.has(ref)) continue;
+          const srcEl = sourceHandleRefs.current.get(ref);
+          const tgtEl = varInHandleRefs.current.get(v.id);
+          if (!srcEl || !tgtEl) continue;
+          const a = mid(srcEl);
+          const b = mid(tgtEl);
+          next.push({
+            id: `invar::${v.id}::${ref}`,
+            kind: "in-var",
+            d: bezierPath(a.x, a.y, b.x, b.y),
+          });
+        }
+      }
+      for (const r of rows) {
+        if (!r.source || !r.target) continue;
+        const srcKey = extractSourceCol(r.source);
+        if (varNames.has(srcKey) || variables.some((v) => v.name === srcKey)) {
+          const varRow = variables.find((v) => v.name === srcKey);
+          if (!varRow) continue;
+          const srcEl = varOutHandleRefs.current.get(varRow.id);
+          const tgtEl = targetHandleRefs.current.get(r.id);
+          if (!srcEl || !tgtEl) continue;
+          const a = mid(srcEl);
+          const b = mid(tgtEl);
+          next.push({
+            id: r.id,
+            kind: "var-out",
+            d: bezierPath(a.x, a.y, b.x, b.y),
+          });
+        } else {
+          const srcEl = sourceHandleRefs.current.get(srcKey);
+          const tgtEl = targetHandleRefs.current.get(r.id);
+          if (!srcEl || !tgtEl) continue;
+          const a = mid(srcEl);
+          const b = mid(tgtEl);
+          next.push({
+            id: r.id,
+            kind: "in-out",
+            d: bezierPath(a.x, a.y, b.x, b.y),
+          });
+        }
+      }
+    } else {
+      for (const r of rows) {
+        if (!r.source || !r.target) continue;
+        const srcKey = extractSourceCol(r.source);
+        const srcEl = sourceHandleRefs.current.get(srcKey);
+        const tgtEl = targetHandleRefs.current.get(r.id);
+        if (!srcEl || !tgtEl) continue;
+        const a = mid(srcEl);
+        const b = mid(tgtEl);
+        next.push({
+          id: r.id,
+          kind: "in-out",
+          d: bezierPath(a.x, a.y, b.x, b.y),
+        });
+      }
     }
     setPaths(next);
-  }, [rows]);
+  }, [rows, variables, varNames, isFieldMapper]);
 
   useLayoutEffect(() => {
     if (!open) return;
     recomputePaths();
-  }, [open, recomputePaths, filteredSources, filteredRows, sourceCols]);
+  }, [open, recomputePaths, filteredSources, filteredVars, filteredRows, sourceCols]);
 
   useEffect(() => {
     if (!open) return;
     const onResize = () => recomputePaths();
     window.addEventListener("resize", onResize);
     const srcPane = sourcePaneRef.current;
+    const varPane = varPaneRef.current;
     const tgtPane = targetPaneRef.current;
     srcPane?.addEventListener("scroll", onResize, { passive: true });
+    varPane?.addEventListener("scroll", onResize, { passive: true });
     tgtPane?.addEventListener("scroll", onResize, { passive: true });
-    // Recompute after fonts/layout settle
     const t = window.setTimeout(recomputePaths, 50);
     const t2 = window.setTimeout(recomputePaths, 200);
     return () => {
       window.removeEventListener("resize", onResize);
       srcPane?.removeEventListener("scroll", onResize);
+      varPane?.removeEventListener("scroll", onResize);
       tgtPane?.removeEventListener("scroll", onResize);
       window.clearTimeout(t);
       window.clearTimeout(t2);
@@ -513,12 +732,15 @@ export function SchemaMapper({
   }, [open, recomputePaths]);
 
   useEffect(() => {
-    if (!dragSource) return;
+    if (!drag) return;
     const onMove = (e: MouseEvent) => {
       const body = bodyRef.current;
       if (!body) return;
       const br = body.getBoundingClientRect();
-      const srcEl = sourceHandleRefs.current.get(dragSource);
+      const srcEl =
+        drag.kind === "input"
+          ? sourceHandleRefs.current.get(drag.key)
+          : varOutHandleRefs.current.get(drag.key);
       if (!srcEl) return;
       const sr = srcEl.getBoundingClientRect();
       setDraft({
@@ -530,15 +752,44 @@ export function SchemaMapper({
     };
     const onUp = (e: MouseEvent) => {
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      const handle = el?.closest("[data-target-handle]") as HTMLElement | null;
-      if (handle) {
-        const rowId = handle.getAttribute("data-target-handle");
-        if (rowId) linkSourceToTarget(dragSource, rowId);
-      } else {
-        const pane = el?.closest(".sm-target-pane");
-        if (pane) linkSourceCreate(dragSource);
+      const targetHandle = el?.closest("[data-target-handle]") as HTMLElement | null;
+      const varHandle = el?.closest("[data-var-handle]") as HTMLElement | null;
+
+      if (drag.kind === "input") {
+        if (varHandle && isFieldMapper) {
+          const varId = varHandle.getAttribute("data-var-handle");
+          if (varId) linkSourceToVar(drag.key, varId);
+        } else if (targetHandle) {
+          const rowId = targetHandle.getAttribute("data-target-handle");
+          if (rowId) linkSourceToTarget(drag.key, rowId);
+        } else if (el?.closest(".sm-target-pane")) {
+          linkSourceCreate(drag.key);
+        } else if (el?.closest(".sm-var-pane") && isFieldMapper) {
+          // Drop on empty Variables pane → create a variable seeded from the column
+          const ident = isIdent(drag.key) ? drag.key : `col(${JSON.stringify(drag.key)})`;
+          setVariables((prev) => [
+            ...prev,
+            { id: uid(), name: slugifyTarget(drag.key) || "var_1", expr: ident },
+          ]);
+        }
+      } else if (drag.kind === "var") {
+        const varRow = variables.find((v) => v.id === drag.key);
+        if (varRow && targetHandle) {
+          const rowId = targetHandle.getAttribute("data-target-handle");
+          if (rowId) linkVarToTarget(varRow.name, rowId);
+        } else if (varRow && el?.closest(".sm-target-pane")) {
+          setRows((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              source: varRow.name,
+              target: slugifyTarget(varRow.name) || varRow.name,
+              type: "string",
+            },
+          ]);
+        }
       }
-      setDragSource(null);
+      setDrag(null);
       setDraft(null);
     };
     window.addEventListener("mousemove", onMove);
@@ -547,21 +798,25 @@ export function SchemaMapper({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [dragSource]);
+  }, [drag, isFieldMapper, variables]);
 
   if (!open) return null;
 
   const activeHover = hoverId || selectedPathId;
-  const hoverRow = rows.find((r) => r.id === activeHover);
+  const linkCount =
+    rows.filter((r) => r.source && r.target).length +
+    (isFieldMapper ? variables.filter((v) => v.name && v.expr).length : 0);
 
   return (
     <div className="schema-mapper-overlay" role="dialog" aria-modal="true">
-      <div className="schema-mapper-modal">
+      <div className={`schema-mapper-modal${isFieldMapper ? " fullscreen" : ""}`}>
         <header className="schema-mapper-header">
           <div>
             <h2>Field Mapper</h2>
             <p className="schema-mapper-sub">
-              Map source columns to targets · drag handles · Delete removes a link · Esc closes
+              {isFieldMapper
+                ? "Input → Variables → Output · drag handles · Delete removes a link · Esc closes"
+                : "Map source columns to targets · drag handles · Delete removes a link · Esc closes"}
             </p>
           </div>
           <button type="button" className="btn" onClick={onClose}>
@@ -582,6 +837,11 @@ export function SchemaMapper({
           <button type="button" className="btn" onClick={autoMapByName}>
             Auto-map
           </button>
+          {isFieldMapper && (
+            <button type="button" className="btn" onClick={addVariable} data-testid="add-variable">
+              Add variable
+            </button>
+          )}
           <button type="button" className="btn" onClick={addTarget}>
             Add target
           </button>
@@ -589,9 +849,7 @@ export function SchemaMapper({
             Clear
           </button>
           <div className="schema-mapper-spacer" />
-          <span className="sm-map-count">
-            {rows.filter((r) => r.source && r.target).length} links
-          </span>
+          <span className="sm-map-count">{linkCount} links</span>
           <button
             type="button"
             className="btn btn-run"
@@ -605,11 +863,14 @@ export function SchemaMapper({
         {error && <div className="schema-mapper-error">{error}</div>}
         {info && !error && <div className="schema-mapper-info">{info}</div>}
 
-        <div className="schema-mapper-body" ref={bodyRef}>
+        <div
+          className={`schema-mapper-body${isFieldMapper ? " three-pane" : ""}`}
+          ref={bodyRef}
+        >
           <svg className="sm-links-svg" aria-hidden>
             {paths.map((p) => {
               const active = activeHover === p.id;
-              const dimmed = activeHover && !active;
+              const dimmed = Boolean(activeHover && !active);
               return (
                 <g key={p.id}>
                   <path
@@ -617,17 +878,22 @@ export function SchemaMapper({
                     className={`sm-link-hit${active ? " active" : ""}`}
                     onMouseEnter={() => setHoverId(p.id)}
                     onMouseLeave={() => setHoverId((id) => (id === p.id ? null : id))}
-                    onClick={() =>
-                      setSelectedPathId((cur) => (cur === p.id ? null : p.id))
-                    }
+                    onClick={() => setSelectedPathId((cur) => (cur === p.id ? null : p.id))}
                     onDoubleClick={(e) => {
                       e.preventDefault();
-                      removeRow(p.id);
+                      if (p.id.startsWith("invar::")) {
+                        const varId = p.id.split("::")[1];
+                        setSelectedPathId(`var_${varId}`);
+                      } else {
+                        removeRow(p.id);
+                      }
                     }}
                   />
                   <path
                     d={p.d}
-                    className={`sm-link${active ? " active" : ""}${dimmed ? " dimmed" : ""}`}
+                    className={`sm-link${active ? " active" : ""}${dimmed ? " dimmed" : ""}${
+                      p.kind === "in-var" ? " var-link" : ""
+                    }`}
                     markerEnd={active ? "url(#sm-arrow-active)" : "url(#sm-arrow)"}
                   />
                 </g>
@@ -668,23 +934,28 @@ export function SchemaMapper({
 
           <div className="sm-pane sm-source-pane" ref={sourcePaneRef}>
             <div className="sm-pane-label sticky">
-              <span className="sm-pane-badge source">Source</span>
+              <span className="sm-pane-badge source">Input</span>
               <span className="sm-pane-meta">{filteredSources.length} columns</span>
             </div>
             <div className="sm-search">
               <input
                 type="search"
-                placeholder="Search source…"
+                placeholder="Search input…"
                 value={sourceQuery}
                 onChange={(e) => setSourceQuery(e.target.value)}
-                aria-label="Filter source columns"
+                aria-label="Filter input columns"
               />
             </div>
             {filteredSources.length === 0 ? (
               <div className="sm-empty">
                 <div className="sm-empty-icon">◎</div>
-                <p>No source columns yet</p>
-                <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={discoverUpstream}>
+                <p>No input columns yet</p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={busy}
+                  onClick={discoverUpstream}
+                >
                   Discover upstream schema
                 </button>
               </div>
@@ -692,30 +963,31 @@ export function SchemaMapper({
               <ul className="sm-col-list">
                 {filteredSources.map((c) => {
                   const mapped = mappedSources.has(c.name);
-                  const linked =
-                    (hoverRow && extractSourceCol(hoverRow.source) === c.name) ||
-                    dragSource === c.name;
+                  const linked = drag?.kind === "input" && drag.key === c.name;
                   return (
                     <li
                       key={c.name}
-                      className={`sm-col-row source${mapped ? " mapped" : " unmapped"}${linked ? " linked" : ""}`}
-                      onMouseEnter={() => {
-                        const row = rows.find((r) => extractSourceCol(r.source) === c.name);
-                        if (row) setHoverId(row.id);
-                      }}
-                      onMouseLeave={() => setHoverId(null)}
+                      className={`sm-col-row source${mapped ? " mapped" : " unmapped"}${
+                        linked ? " linked" : ""
+                      }`}
                     >
                       <div className="sm-col-main">
                         <span className="sm-col-name">{c.name}</span>
                         <div className="sm-col-meta">
                           <span className="sm-type-chip">{c.type}</span>
-                          {c.required && <span className="sm-required" title="Required">*</span>}
+                          {c.required && (
+                            <span className="sm-required" title="Required">
+                              *
+                            </span>
+                          )}
                         </div>
                       </div>
                       <button
                         type="button"
-                        className={`sm-handle source${mapped ? " on" : ""}${dragSource === c.name ? " dragging" : ""}`}
-                        title="Drag to a target column"
+                        className={`sm-handle source${mapped ? " on" : ""}${
+                          drag?.kind === "input" && drag.key === c.name ? " dragging" : ""
+                        }`}
+                        title="Drag to a Variable or Output column"
                         aria-label={`Connect ${c.name}`}
                         ref={(el) => {
                           if (el) sourceHandleRefs.current.set(c.name, el);
@@ -724,7 +996,7 @@ export function SchemaMapper({
                         onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setDragSource(c.name);
+                          setDrag({ kind: "input", key: c.name });
                           setSelectedPathId(null);
                         }}
                       />
@@ -735,26 +1007,130 @@ export function SchemaMapper({
             )}
           </div>
 
-          <div className="sm-center-gap" aria-hidden />
+          {isFieldMapper ? (
+            <div className="sm-pane sm-var-pane" ref={varPaneRef}>
+              <div className="sm-pane-label sticky">
+                <span className="sm-pane-badge variables">Variables</span>
+                <span className="sm-pane-meta">{filteredVars.length}</span>
+              </div>
+              <div className="sm-search">
+                <input
+                  type="search"
+                  placeholder="Search variables…"
+                  value={varQuery}
+                  onChange={(e) => setVarQuery(e.target.value)}
+                  aria-label="Filter variables"
+                />
+              </div>
+              {filteredVars.length === 0 ? (
+                <div className="sm-empty">
+                  <div className="sm-empty-icon">◎</div>
+                  <p>No variables yet</p>
+                  <p className="sm-empty-hint">
+                    Named intermediate expressions — reference input columns, then use in Output.
+                  </p>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={addVariable}>
+                    Add variable
+                  </button>
+                </div>
+              ) : (
+                <ul className="sm-col-list">
+                  {filteredVars.map((v) => {
+                    const linked = activeHover === `var_${v.id}` || activeHover?.includes(v.id);
+                    return (
+                      <li
+                        key={v.id}
+                        className={`sm-col-row variable${v.expr ? " mapped" : ""}${
+                          linked ? " linked" : ""
+                        }`}
+                        onMouseEnter={() => setHoverId(`var_${v.id}`)}
+                        onMouseLeave={() => setHoverId(null)}
+                      >
+                        <button
+                          type="button"
+                          className={`sm-handle target${v.expr ? " on" : ""}`}
+                          data-var-handle={v.id}
+                          title="Drop an input column here"
+                          aria-label={`Variable input for ${v.name || "unnamed"}`}
+                          ref={(el) => {
+                            if (el) varInHandleRefs.current.set(v.id, el);
+                            else varInHandleRefs.current.delete(v.id);
+                          }}
+                        />
+                        <div className="sm-col-main">
+                          <input
+                            className="sm-target-input"
+                            value={v.name}
+                            onChange={(e) => updateVariable(v.id, { name: e.target.value })}
+                            placeholder="variable name"
+                            aria-label="Variable name"
+                            data-testid="variable-name"
+                          />
+                          <input
+                            className="sm-expr-input"
+                            value={v.expr}
+                            onChange={(e) => updateVariable(v.id, { expr: e.target.value })}
+                            placeholder={"expression e.g. upper(first)+' '+last"}
+                            aria-label="Variable expression"
+                            data-testid="variable-expr"
+                          />
+                          <div className="sm-col-meta">
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              title="Delete variable"
+                              onClick={() => removeVariable(v.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className={`sm-handle source${v.name ? " on" : ""}${
+                            drag?.kind === "var" && drag.key === v.id ? " dragging" : ""
+                          }`}
+                          title="Drag to an Output column"
+                          aria-label={`Connect variable ${v.name}`}
+                          ref={(el) => {
+                            if (el) varOutHandleRefs.current.set(v.id, el);
+                            else varOutHandleRefs.current.delete(v.id);
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDrag({ kind: "var", key: v.id });
+                            setSelectedPathId(null);
+                          }}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <div className="sm-center-gap" aria-hidden />
+          )}
 
           <div className="sm-pane sm-target-pane" ref={targetPaneRef}>
             <div className="sm-pane-label sticky">
-              <span className="sm-pane-badge target">Target</span>
+              <span className="sm-pane-badge target">Output</span>
               <span className="sm-pane-meta">{filteredRows.length} columns</span>
             </div>
             <div className="sm-search">
               <input
                 type="search"
-                placeholder="Search target…"
+                placeholder="Search output…"
                 value={targetQuery}
                 onChange={(e) => setTargetQuery(e.target.value)}
-                aria-label="Filter target columns"
+                aria-label="Filter output columns"
               />
             </div>
             {filteredRows.length === 0 ? (
               <div className="sm-empty">
                 <div className="sm-empty-icon">◎</div>
-                <p>No target mappings</p>
+                <p>No output mappings</p>
                 <button type="button" className="btn btn-primary btn-sm" onClick={autoMapByName}>
                   Auto-map by name
                 </button>
@@ -766,7 +1142,9 @@ export function SchemaMapper({
                   return (
                     <li
                       key={r.id}
-                      className={`sm-col-row target${r.source ? " mapped" : ""}${linked ? " linked" : ""}`}
+                      className={`sm-col-row target${r.source ? " mapped" : ""}${
+                        linked ? " linked" : ""
+                      }`}
                       onMouseEnter={() => setHoverId(r.id)}
                       onMouseLeave={() => setHoverId(null)}
                     >
@@ -774,7 +1152,7 @@ export function SchemaMapper({
                         type="button"
                         className={`sm-handle target${r.source ? " on" : ""}`}
                         data-target-handle={r.id}
-                        title="Drop a source connection here"
+                        title="Drop an input or variable connection here"
                         aria-label={`Target handle for ${r.target || "unnamed"}`}
                         ref={(el) => {
                           if (el) targetHandleRefs.current.set(r.id, el);
@@ -786,8 +1164,8 @@ export function SchemaMapper({
                           className="sm-target-input"
                           value={r.target}
                           onChange={(e) => updateRow(r.id, { target: e.target.value })}
-                          placeholder="target name"
-                          aria-label="Target column name"
+                          placeholder="output name"
+                          aria-label="Output column name"
                         />
                         <div className="sm-col-meta">
                           {r.source ? (
@@ -801,7 +1179,7 @@ export function SchemaMapper({
                             className="sm-type-select"
                             value={r.type}
                             onChange={(e) => updateRow(r.id, { type: e.target.value })}
-                            aria-label="Target type"
+                            aria-label="Output type"
                           >
                             {["string", "int", "float", "boolean", "date"].map((t) => (
                               <option key={t} value={t}>
@@ -823,7 +1201,7 @@ export function SchemaMapper({
                             className="sm-expr-input"
                             value={r.source}
                             onChange={(e) => updateRow(r.id, { source: e.target.value })}
-                            placeholder='expression e.g. upper(col("Name"))'
+                            placeholder='expression e.g. upper(col("Name")) or a Variable name'
                             aria-label="Mapping expression"
                             title="Edit source expression"
                           />
@@ -842,7 +1220,18 @@ export function SchemaMapper({
             <span>
               Selected link — Delete key or double-click arrow to remove, or
             </span>
-            <button type="button" className="btn btn-sm" onClick={() => removeRow(selectedPathId)}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                if (selectedPathId.startsWith("var_")) {
+                  removeVariable(selectedPathId.replace(/^var_/, ""));
+                } else if (!selectedPathId.startsWith("invar::")) {
+                  removeRow(selectedPathId);
+                }
+                setSelectedPathId(null);
+              }}
+            >
               Delete link
             </button>
           </div>

@@ -1,9 +1,10 @@
-"""Lookup Join — simple left join of primary rows with a lookup set."""
+"""Lookup Join — join primary rows with a lookup set (left/inner/right/full)."""
 
 from __future__ import annotations
 
 import csv
 import json
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -51,14 +52,49 @@ def _load_lookup_file(path: Path) -> list[dict[str, Any]]:
         return list(csv.DictReader(f))
 
 
+def _merge_rows(
+    left_row: dict[str, Any] | None,
+    right_row: dict[str, Any] | None,
+    left_keys: list[str],
+    right_keys: list[str],
+    prefix: str,
+) -> dict[str, Any]:
+    """Merge left + right. Unmatched right maps join keys onto left key names."""
+    if left_row is None and right_row is None:
+        return {}
+    if left_row is None:
+        assert right_row is not None
+        merged: dict[str, Any] = {}
+        for lk, rk in zip(left_keys, right_keys):
+            merged[lk] = right_row.get(rk)
+        for k, v in right_row.items():
+            if k in right_keys:
+                continue
+            dest_k = f"{prefix}{k}" if prefix else k
+            merged[dest_k] = v
+        return merged
+
+    merged = dict(left_row)
+    if right_row:
+        for k, v in right_row.items():
+            if k in right_keys:
+                continue
+            dest_k = f"{prefix}{k}" if prefix else k
+            if dest_k not in merged:
+                merged[dest_k] = v
+    return merged
+
+
 @register
 class LookupJoin(BaseComponent):
-    """Left-join primary input rows with a lookup dataset on key columns.
+    """Join primary (left) input rows with a lookup (right) dataset on key columns.
 
     Right/lookup side comes from (in order):
     1. ``ctx.variables['_input_streams']['right']`` (multi-input via targetHandle=right)
     2. ``lookup_path`` config (CSV/JSON file)
-    3. empty (pass-through left rows with null lookup cols if configured)
+    3. empty (pass-through left rows when how keeps unmatched left)
+
+    Wire two sources: primary → Lookup Join **left/in** handle, lookup → **right** handle.
     """
 
     component_type = "lookup_join"
@@ -72,30 +108,39 @@ class LookupJoin(BaseComponent):
             "right_keys": {"type": "array", "items": {"type": "string"}},
             "lookup_path": {"type": "string"},
             "prefix": {"type": "string", "default": ""},
-            "how": {"type": "string", "enum": ["left", "inner"], "default": "left"},
+            "how": {
+                "type": "string",
+                "enum": ["left", "inner", "right", "full"],
+                "default": "left",
+            },
+            "match": {
+                "type": "string",
+                "enum": ["all", "first"],
+                "default": "all",
+            },
         },
     }
     parameters = [
         {
             "key": "left_keys",
-            "label": "Left keys",
+            "label": "Primary (left) join keys",
             "type": "string_list",
             "required": True,
-            "help": "Key column(s) on the primary (left) input",
+            "help": "Column(s) on the primary input (wire to the left/in handle). Example: customer_id",
         },
         {
             "key": "right_keys",
-            "label": "Right keys",
+            "label": "Lookup (right) join keys",
             "type": "string_list",
             "required": True,
-            "help": "Key column(s) on the lookup (right) input",
+            "help": "Matching column(s) on the lookup input (wire to the right handle, or set Lookup file)",
         },
         {
             "key": "lookup_path",
             "label": "Lookup file",
             "type": "string",
             "required": False,
-            "help": "Optional CSV/JSON lookup when not wired as a second input",
+            "help": "Optional CSV/JSON lookup when not wiring a second source into the right handle",
         },
         {
             "key": "prefix",
@@ -111,8 +156,17 @@ class LookupJoin(BaseComponent):
             "type": "select",
             "required": False,
             "default": "left",
-            "options": ["left", "inner"],
-            "help": "left keeps unmatched; inner drops them",
+            "options": ["left", "inner", "right", "full"],
+            "help": "left = keep unmatched primary; inner = matches only; right = keep unmatched lookup; full = keep both unmatched sides",
+        },
+        {
+            "key": "match",
+            "label": "Match mode",
+            "type": "select",
+            "required": False,
+            "default": "all",
+            "options": ["all", "first"],
+            "help": "all = one output row per matching lookup row (one-to-many); first = only the first hit per key",
         },
     ]
 
@@ -136,37 +190,52 @@ class LookupJoin(BaseComponent):
 
             prefix = str(self.config.get("prefix") or "")
             how = (self.config.get("how") or "left").lower()
+            if how not in ("left", "inner", "right", "full"):
+                raise ValueError(f"LookupJoin: unsupported how={how!r} (use left|inner|right|full)")
+            match_mode = (self.config.get("match") or "all").lower()
+            if match_mode not in ("all", "first"):
+                raise ValueError(f"LookupJoin: unsupported match={match_mode!r} (use all|first)")
 
-            index: dict[tuple, dict[str, Any]] = {}
+            index: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
             for rr in right_rows:
-                index[_row_key(rr, right_keys)] = rr
+                index[_row_key(rr, right_keys)].append(rr)
 
             out: list[dict[str, Any]] = []
             rejected = 0
+            used_right_keys: set[tuple] = set()
+
             for lr in left_rows:
                 key = _row_key(lr, left_keys)
-                match = index.get(key)
-                if match is None:
-                    if how == "inner":
+                matches = list(index.get(key) or [])
+                if match_mode == "first" and matches:
+                    matches = matches[:1]
+
+                if not matches:
+                    if how in ("left", "full"):
+                        out.append(_merge_rows(lr, None, left_keys, right_keys, prefix))
+                    elif how == "inner":
                         rejected += 1
-                        continue
-                    out.append(dict(lr))
+                    # how == "right": drop unmatched primary
                     continue
-                merged = dict(lr)
-                for k, v in match.items():
-                    if k in right_keys:
+
+                used_right_keys.add(key)
+                for match in matches:
+                    out.append(_merge_rows(lr, match, left_keys, right_keys, prefix))
+
+            if how in ("right", "full"):
+                for key, rrs in index.items():
+                    if key in used_right_keys:
                         continue
-                    dest_k = f"{prefix}{k}" if prefix else k
-                    if dest_k not in merged:
-                        merged[dest_k] = v
-                out.append(merged)
+                    picks = rrs[:1] if match_mode == "first" else rrs
+                    for rr in picks:
+                        out.append(_merge_rows(None, rr, left_keys, right_keys, prefix))
 
             metrics.rows_in = len(left_rows)
             metrics.rows_out = len(out)
             metrics.rows_rejected = rejected
             ctx.emit(
                 f"LookupJoin: left={len(left_rows)} lookup={len(right_rows)} → {len(out)} "
-                f"(how={how})"
+                f"(how={how}, match={match_mode})"
             )
 
         return ComponentResult(
@@ -177,5 +246,6 @@ class LookupJoin(BaseComponent):
                 "right_keys": right_keys,
                 "lookup_rows": len(right_rows),
                 "how": how,
+                "match": match_mode,
             },
         )

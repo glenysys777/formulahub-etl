@@ -11,7 +11,7 @@ Local: UI `http://127.0.0.1:18766` · API `http://127.0.0.1:18765` · `FORMULAET
 
 1. **AI Build** — paste an English description of the pipeline → graph appears (LLM if keyed; else offline heuristic). Edit nodes freely.  
 2. **Discover schema** — on a source (Excel, file, API demo, DB demo), click **Discover schema** so columns + types populate.  
-3. **Field Mapper** — open Field Mapper on the map node → drag source → target, auto-map by name, or edit `out=expr` for expressions.  
+3. **Field Mapper** — open Field Mapper → **Input · Variables · Output**; drag links, add Variables, auto-map, or edit expressions. To merge two sources, use **Lookup Join** first.  
 4. **Run** — **Run pipeline**; check sidebar metrics, logs, rejects, and output paths under `data/out/`.
 
 ---
@@ -150,7 +150,21 @@ Local: UI `http://127.0.0.1:18766` · API `http://127.0.0.1:18765` · `FORMULAET
 
 ---
 
-## 10) XML / JSON records → rows
+## 10) Two sources → Lookup Join → Field Mapper
+
+**What it is:** Merge a primary stream with a lookup (customers, dims, reference file), then apply Variables + output column logic.
+
+**Components:** source A + source B → `lookup_join` → Field Mapper → destination
+
+**How to build:**
+1. Wire **primary** → Lookup Join **left/in** handle, **lookup** → **right** handle (or set Lookup file).  
+2. Set primary/lookup join keys; choose join type (`left` / `inner` / `right` / `full`) and match mode (`all` / `first`).  
+3. Open **Field Mapper** — add Variables in the middle pane, map Output columns.  
+4. **Run**. Demo: `demos/lookup-join-mapper`.
+
+---
+
+## 11) XML / JSON records → rows
 
 **What it is:** Nested or tagged payloads flattened into tabular rows for mapping and load.
 
@@ -170,6 +184,7 @@ Local: UI `http://127.0.0.1:18766` · API `http://127.0.0.1:18765` · `FORMULAET
 | Encrypted drop → warehouse | `demos/s3-pgp-snowflake` |
 | Excel → file | `demos/excel-to-file` |
 | Core Field Mapper path | UI core-path demo / `demos/` core path |
+| Lookup Join + Variables | `demos/lookup-join-mapper` |
 | API → map → file | `demos/api-map-transform` |
 | SFTP → Excel → file | `demos/sftp-excel-to-file` |
 | DB → file | `demos/db-to-file` |

@@ -9,7 +9,7 @@ Product UI says **Field Mapper**. Speak in features: discover schema, drag colum
 
 1. **Load demo (5s)** — Click Load demo. Default **core path** opens with **Field Mapper** already showing many mapping arrows (Excel → Field Mapper → Filter → Sort → Aggregate → File).
 
-2. **Field Mapper (15s)** — Point at curved links, sticky SOURCE / TARGET headers, monospace field names. Say: Field Mapper — expressions like `amount*1.1`, MVP visual mapper (not a full multi-output IDE).
+2. **Field Mapper (15s)** — Point at **Input · Variables · Output**, curved links, sticky headers. Say: Variables are named intermediate expressions; outputs can reference them.
 
 3. **Run (15s)** — Close mapper if open, click Run. Show flowing edges + success metrics.
 
