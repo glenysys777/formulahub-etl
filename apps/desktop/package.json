@@ -36,6 +36,7 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
       "target": [
         "dir",
         "dmg"
@@ -43,6 +44,9 @@
       "artifactName": "FormulaHub-Studio-${version}-${arch}.${ext}",
       "hardenedRuntime": false,
       "gatekeeperAssess": false
+    },
+    "linux": {
+      "icon": "build/icon.png"
     },
     "dmg": {
       "title": "FormulaHub Studio"

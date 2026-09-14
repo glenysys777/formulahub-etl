@@ -23,6 +23,13 @@ let apiHandle = null;
 /** @type {http.Server | null} */
 let staticServer = null;
 let quitting = false;
+/** Studio URL currently loaded in the window (http://127.0.0.1:UI_PORT/). */
+let studioUrl = null;
+/** Prevent repeated auto-restarts in one session after a single recovery. */
+let apiAutoRestartUsed = false;
+/** @type {ReturnType<typeof setInterval> | null} */
+let healthTimer = null;
+let restartingApi = false;
 
 const isDev = process.argv.includes("--dev");
 const UI_PORT = Number(process.env.FORMULAETL_UI_PORT || 18766);
@@ -31,7 +38,10 @@ const log = {
   info: (...args) => console.log(...args),
 };
 
-function createLoadingHtml(message) {
+function createLoadingHtml(message, { reconnect = false } = {}) {
+  const reconnectBlock = reconnect
+    ? `<p class="hint">The local API stopped. Retrying once…</p>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,6 +77,7 @@ function createLoadingHtml(message) {
     }
     .sub { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.95rem; }
     .msg { color: var(--text); font-size: 0.9rem; opacity: 0.9; }
+    .hint { color: var(--accent); font-size: 0.85rem; margin-top: 1rem; }
     .spin {
       width: 28px; height: 28px; margin: 0 auto 1.25rem;
       border: 2px solid rgba(61,139,253,0.25);
@@ -83,9 +94,19 @@ function createLoadingHtml(message) {
     <h1 class="brand">FormulaHub Studio</h1>
     <p class="sub">Local ETL on this machine</p>
     <p class="msg" id="msg">${message}</p>
+    ${reconnectBlock}
   </div>
 </body>
 </html>`;
+}
+
+function loadLoading(message, opts) {
+  if (!mainWindow || mainWindow.isDestroyed()) return Promise.resolve();
+  return mainWindow.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(
+      createLoadingHtml(message, opts),
+    )}`,
+  );
 }
 
 function startStaticServer(webRoot) {
@@ -147,7 +168,111 @@ function stopStaticServer() {
   staticServer = null;
 }
 
+function studioBrowserUrl() {
+  return studioUrl || `http://127.0.0.1:${UI_PORT}/`;
+}
+
+function openInBrowser() {
+  shell.openExternal(studioBrowserUrl());
+}
+
+function stopHealthWatch() {
+  if (healthTimer) {
+    clearInterval(healthTimer);
+    healthTimer = null;
+  }
+}
+
+function startHealthWatch() {
+  stopHealthWatch();
+  healthTimer = setInterval(() => {
+    void onHealthTick();
+  }, 4000);
+}
+
+async function onHealthTick() {
+  if (quitting || restartingApi || !mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  const health = await fetchHealth(DEFAULT_API_PORT);
+  if (health && health.status === "ok") {
+    return;
+  }
+  // API gone — auto-restart once, then show reconnect message.
+  log.info("[desktop] API health lost");
+  if (!apiAutoRestartUsed) {
+    apiAutoRestartUsed = true;
+    await restartApi({ reason: "auto-reconnect" });
+    return;
+  }
+  await loadLoading(
+    "Local API disconnected.<br/><br/>Use <b>Studio → Restart API</b> or quit and reopen.",
+  );
+}
+
+async function restartApi({ reason = "menu" } = {}) {
+  if (restartingApi || quitting) return;
+  restartingApi = true;
+  log.info(`[desktop] Restart API (${reason})`);
+  try {
+    await loadLoading(
+      reason === "auto-reconnect"
+        ? "Reconnecting to local API…"
+        : "Restarting local API…",
+      { reconnect: reason === "auto-reconnect" },
+    );
+    await stopApi(apiHandle, log);
+    apiHandle = null;
+    const workDir = resolveWorkDir();
+    apiHandle = await ensureApi({ workDir, log });
+    if (studioUrl) {
+      await mainWindow?.loadURL(studioUrl);
+    } else {
+      await loadStudioUi(workDir);
+    }
+    log.info("[desktop] API restart OK");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await loadLoading(`Could not restart API.<br/><br/>${msg}`);
+    dialog.showErrorBox("FormulaHub Studio", msg);
+  } finally {
+    restartingApi = false;
+  }
+}
+
 function buildMenu() {
+  const studioMenu = {
+    label: "Studio",
+    submenu: [
+      {
+        label: "Open in Browser",
+        accelerator: "CmdOrCtrl+Shift+B",
+        click: () => openInBrowser(),
+      },
+      {
+        label: "Restart API",
+        accelerator: "CmdOrCtrl+Shift+R",
+        click: () => {
+          void restartApi({ reason: "menu" });
+        },
+      },
+      { type: "separator" },
+      {
+        label: "API health…",
+        click: async () => {
+          const h = await fetchHealth(DEFAULT_API_PORT);
+          dialog.showMessageBox({
+            type: "info",
+            title: "API health",
+            message: h
+              ? JSON.stringify(h, null, 2)
+              : "API not reachable on 127.0.0.1:18765",
+          });
+        },
+      },
+    ],
+  };
+
   const template = [
     ...(process.platform === "darwin"
       ? [
@@ -183,6 +308,7 @@ function buildMenu() {
         { role: "selectAll" },
       ],
     },
+    studioMenu,
     {
       label: "View",
       submenu: [
@@ -199,19 +325,6 @@ function buildMenu() {
     {
       label: "Help",
       submenu: [
-        {
-          label: "Open API health",
-          click: async () => {
-            const h = await fetchHealth(DEFAULT_API_PORT);
-            dialog.showMessageBox({
-              type: "info",
-              title: "API health",
-              message: h
-                ? JSON.stringify(h, null, 2)
-                : "API not reachable on 127.0.0.1:18765",
-            });
-          },
-        },
         {
           label: "Docs: Desktop shell",
           click: () => {
@@ -230,6 +343,49 @@ function buildMenu() {
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+async function loadStudioUi(workDir) {
+  // Dev: prefer Vite if running; else built Studio web.
+  if (isDev) {
+    const viteOk = await new Promise((resolve) => {
+      const req = http.get(
+        `http://127.0.0.1:${UI_PORT}/`,
+        { timeout: 800 },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode && res.statusCode < 500);
+        },
+      );
+      req.on("error", () => resolve(false));
+      req.on("timeout", () => {
+        req.destroy();
+        resolve(false);
+      });
+    });
+    if (viteOk) {
+      studioUrl = `http://127.0.0.1:${UI_PORT}/`;
+      await mainWindow.loadURL(studioUrl);
+      return;
+    }
+  }
+
+  const webRoot = resolveStudioWebRoot(workDir);
+  if (!webRoot) {
+    const tip =
+      "Studio UI build not found. Run: cd apps/web && npm ci && npm run build";
+    await loadLoading(tip);
+    dialog.showErrorBox("FormulaHub Studio", tip);
+    return;
+  }
+
+  if (!staticServer) {
+    studioUrl = await startStaticServer(webRoot);
+  } else {
+    studioUrl = `http://127.0.0.1:${UI_PORT}/`;
+  }
+  log.info(`[desktop] Serving Studio from ${webRoot} at ${studioUrl}`);
+  await mainWindow.loadURL(studioUrl);
 }
 
 async function createWindow() {
@@ -256,11 +412,7 @@ async function createWindow() {
     return { action: "deny" };
   });
 
-  await mainWindow.loadURL(
-    `data:text/html;charset=utf-8,${encodeURIComponent(
-      createLoadingHtml("Starting local API…"),
-    )}`,
-  );
+  await loadLoading("Starting local API…");
 
   const workDir = resolveWorkDir();
   log.info(`[desktop] work_dir=${workDir}`);
@@ -270,11 +422,7 @@ async function createWindow() {
     apiHandle = await ensureApi({ workDir, log });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await mainWindow.loadURL(
-      `data:text/html;charset=utf-8,${encodeURIComponent(
-        createLoadingHtml(`Could not start API.<br/><br/>${msg}`),
-      )}`,
-    );
+    await loadLoading(`Could not start API.<br/><br/>${msg}`);
     dialog.showErrorBox("FormulaHub Studio", msg);
     return;
   }
@@ -283,45 +431,8 @@ async function createWindow() {
   const shownWorkDir = health?.work_dir || workDir;
   log.info(`[desktop] API ready · work_dir=${shownWorkDir}`);
 
-  // Dev: prefer Vite if running; else built Studio web.
-  if (isDev) {
-    const viteOk = await new Promise((resolve) => {
-      const req = http.get(
-        `http://127.0.0.1:${UI_PORT}/`,
-        { timeout: 800 },
-        (res) => {
-          res.resume();
-          resolve(res.statusCode && res.statusCode < 500);
-        },
-      );
-      req.on("error", () => resolve(false));
-      req.on("timeout", () => {
-        req.destroy();
-        resolve(false);
-      });
-    });
-    if (viteOk) {
-      await mainWindow.loadURL(`http://127.0.0.1:${UI_PORT}/`);
-      return;
-    }
-  }
-
-  const webRoot = resolveStudioWebRoot(workDir);
-  if (!webRoot) {
-    const tip =
-      "Studio UI build not found. Run: cd apps/web && npm ci && npm run build";
-    await mainWindow.loadURL(
-      `data:text/html;charset=utf-8,${encodeURIComponent(
-        createLoadingHtml(tip),
-      )}`,
-    );
-    dialog.showErrorBox("FormulaHub Studio", tip);
-    return;
-  }
-
-  const studioUrl = await startStaticServer(webRoot);
-  log.info(`[desktop] Serving Studio from ${webRoot} at ${studioUrl}`);
-  await mainWindow.loadURL(studioUrl);
+  await loadStudioUi(workDir);
+  startHealthWatch();
 }
 
 app.whenReady().then(async () => {
@@ -346,6 +457,7 @@ app.on("before-quit", (event) => {
   quitting = true;
   event.preventDefault();
   (async () => {
+    stopHealthWatch();
     stopStaticServer();
     await stopApi(apiHandle, log);
     apiHandle = null;

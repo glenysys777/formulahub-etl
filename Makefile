@@ -1,4 +1,4 @@
-.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql api worker web build docker-up docker-down lint desktop desktop-install desktop-lint mac-pack
+.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql api worker web build docker-up docker-down lint desktop desktop-install desktop-lint dist-mac mac-pack
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -112,13 +112,20 @@ desktop-lint:
 desktop: build
 	cd apps/desktop && npm install && npm start
 
+# Mac .app + .dmg (must run on macOS). Use: make dist-mac   or   make dist:mac
+dist-mac: build
+	cd apps/desktop && npm install && npm run dist:mac
+
+dist\:mac: dist-mac
+
 docker-up: seed
 	docker compose up --build
 
 docker-down:
 	docker compose down
 
-# Zip FormulaHub-ETL-Mac for Mac handoff (Docker + desktop sources). Not a signed .app.
+# Zip FormulaHub-ETL-Mac: FormulaHub Studio.app + README + START-NATIVE.command fallback.
+# Optional on macOS: MAC_PACK_BUILD_ELECTRON=1 make mac-pack  (embeds electron-builder .app)
 mac-pack:
 	bash scripts/mac_pack.sh
 

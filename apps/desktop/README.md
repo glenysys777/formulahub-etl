@@ -1,82 +1,65 @@
 # FormulaHub Studio — desktop shell
 
-Electron shell that starts the local FormulaHub ETL API (if needed) and loads Studio in a native window.
-
-**Why Electron (not Tauri) for this wave:** fastest path to a double-clickable shell on Mac while the cloud agent runs on Linux. Tauri 2 remains a future option; Mac `.dmg` still requires a **macOS** runner either way.
+Electron shell that starts the local FormulaHub ETL API (if needed) and loads Studio in a **native window**. Browser is optional (**Studio → Open in Browser**).
 
 ## Prerequisites
 
 - Node.js 20+
 - Python 3.11+ with FormulaHub packages installed (`make install` from repo root)
-- Built Studio web UI (`cd apps/web && npm ci && npm run build`)
+- Built Studio web UI (`make build`)
 
-## Run from repo (any OS with Electron)
-
-```bash
-# from repo root
-make install
-make seed
-make build          # apps/web → dist
-make desktop        # opens FormulaHub Studio window
-```
-
-Or:
+## Run from repo
 
 ```bash
-cd apps/desktop && npm install && npm start
+make install && make seed && make build
+make desktop
 ```
 
 Dev (reuse Vite if already on :18766):
 
 ```bash
-make api &          # optional — shell will start API if missing
+make api &
 make web &
 cd apps/desktop && npm run dev
 ```
 
-## Build on Mac → open Studio.app
-
-On a **macOS** machine (Apple Silicon or Intel):
+## Build on Mac → FormulaHub Studio.app
 
 ```bash
-# 1. Clone / open the FormulaHub ETL repo
-cd formulahub-etl
-make install && make seed
-make build
-
-# 2. Install desktop deps and package
-cd apps/desktop
-npm install
-npm run dist:mac    # unsigned .app + .dmg under apps/desktop/release/
+make install && make seed && make build
+cd apps/desktop && npm install && npm run dist:mac
+open release/mac*/FormulaHub\ Studio.app
 ```
 
-Then:
+Unsigned Gatekeeper: Right-click → **Open**.
 
-1. Open `apps/desktop/release/mac*/FormulaHub Studio.app` (or install from the `.dmg`).
-2. First launch: Gatekeeper may block unsigned builds — **Right-click → Open** (or `xattr -cr` the app). Signed notarized builds are a later wave.
-3. Double-click → shell starts API on `127.0.0.1:18765` if needed → Studio loads → status bar shows `workspace on this machine · {work_dir}`.
-4. Quit the app → owned API process is stopped (best-effort SIGTERM).
+### What happens on double-click
 
-Set workspace explicitly:
+1. Starts (or reuses) API on `127.0.0.1:18765` — no Terminal required
+2. Serves Studio UI and loads it in the Electron window
+3. Status bar shows `workspace on this machine · {work_dir}`
+4. If the API dies: auto-restart **once**, then prompt to use **Studio → Restart API**
+5. Quit stops an API this shell started
+
+### Menu
+
+| Item | Action |
+|------|--------|
+| Studio → Open in Browser | Optional browser at `http://127.0.0.1:18766` |
+| Studio → Restart API | Stop owned API + spawn again |
+| Studio → API health… | Show `/health` JSON |
+
+## Mac pack
 
 ```bash
-export FORMULAETL_WORK_DIR=/path/to/formulahub-etl
-open "FormulaHub Studio.app"
+make mac-pack
+# → data/out/mac-pack/FormulaHub-ETL-Mac.zip
 ```
 
-Packaged apps look for the repo at `~/FormulaHub-ETL` or `FORMULAETL_HOME` / `FORMULAETL_WORK_DIR` so Python packages and `data/` stay on disk (local-path primary; no cloud auth in this wave).
+Unzip → double-click **FormulaHub Studio.app**. `START-NATIVE.command` is a Terminal fallback only.
 
-## What the shell does / does not
-
-| Does | Does not |
-|------|----------|
-| Spawn/reuse local API + embedded worker | Cloud login / SSO |
-| Load Studio WebView at 127.0.0.1 | New connectors |
-| Show `work_dir` via Studio status bar (`/health`) | Claim Linux CI produces signed Mac apps |
-| Quit → stop API it started | Replace browser fallback |
-
-Browser fallback remains: `make api` + `make web`.
+See `docs/studio/DESKTOP_SHELL.md`.
 
 ## CI note
 
-Linux CI runs `npm run build:check` (syntax + structure). **`.dmg` / `.app` require `runs-on: macos-*`** — see `.github/workflows/ci.yml` comments and `docs/studio/DESKTOP_SHELL.md`.
+Linux CI runs `npm run build:check` + `smoke:api`. **`.dmg` / signed `.app` require macOS** — see workflow comments.

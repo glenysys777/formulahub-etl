@@ -95,23 +95,29 @@ make docker-up    # API :18765  ·  UI :18766
 
 ### Desktop Studio (Mac / local)
 
-Prefer a native window over Docker+browser:
+Prefer a **desktop window** over Docker+browser. Browser is optional (Studio menu → Open in Browser).
 
 ```bash
 make install && make seed && make build
-make desktop      # Electron shell → starts API if needed → opens Studio
+make desktop      # Electron → API + Studio window (no Terminal to keep open)
 ```
 
-**Build on Mac → open Studio.app** (must run on macOS; Linux CI does not emit a signed `.dmg`):
+**Build on Mac → FormulaHub Studio.app** (macOS; Linux CI does not emit a signed `.dmg`):
 
 ```bash
 cd apps/desktop && npm install && npm run dist:mac
 open release/mac*/FormulaHub\ Studio.app
 ```
 
-Double-click flow: app starts the local API when needed, loads Studio, shows `work_dir` in the status bar; quit stops an API the shell started. Details: [docs/studio/DESKTOP_SHELL.md](./docs/studio/DESKTOP_SHELL.md), [apps/desktop/README.md](./apps/desktop/README.md).
+Double-click starts API + Studio behind the scenes; quit stops children. Survives better than Terminal `.command` launchers. Details: [docs/studio/DESKTOP_SHELL.md](./docs/studio/DESKTOP_SHELL.md).
 
-Mac handoff zip (Docker + sources): `make mac-pack` → `data/out/mac-pack/FormulaHub-ETL-Mac.zip`.
+**Mac handoff zip** (unzip → double-click **FormulaHub Studio.app**):
+
+```bash
+make mac-pack
+# → data/out/mac-pack/FormulaHub-ETL-Mac.zip
+#    FormulaHub Studio.app  ·  README_MAC.md  ·  START-NATIVE.command (fallback)
+```
 
 ### Hosted UI vs API
 

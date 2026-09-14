@@ -15,6 +15,7 @@ const required = [
   "src/api-manager.js",
   "src/paths.js",
   "src/preload.js",
+  "build/icon.png",
   "README.md",
 ];
 
@@ -38,6 +39,18 @@ if (pkg.main !== "src/main.js") {
 if (!pkg.scripts?.["build:check"]) {
   console.error("package.json missing build:check script");
   failed = true;
+}
+if (!pkg.scripts?.["dist:mac"]) {
+  console.error("package.json missing dist:mac script");
+  failed = true;
+}
+
+const mainSrc = fs.readFileSync(path.join(root, "src/main.js"), "utf8");
+for (const needle of ["Open in Browser", "Restart API", "auto-reconnect"]) {
+  if (!mainSrc.includes(needle)) {
+    console.error(`src/main.js missing expected feature marker: ${needle}`);
+    failed = true;
+  }
 }
 
 for (const file of [
