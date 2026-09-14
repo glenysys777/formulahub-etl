@@ -258,6 +258,16 @@ function AppCanvas() {
       return false;
     }
   });
+  /** Secondary rail panels — collapsed by default so Node Inspector stays visible. */
+  const [railOpen, setRailOpen] = useState<{
+    pipeline: boolean;
+    schedule: boolean;
+    lastRun: boolean;
+    logs: boolean;
+    validate: boolean;
+  }>({ pipeline: false, schedule: false, lastRun: false, logs: false, validate: false });
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const fileMenuRef = useRef<HTMLDetailsElement | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddQuery, setQuickAddQuery] = useState("");
   const [canvasFocused, setCanvasFocused] = useState(false);
@@ -409,13 +419,25 @@ function AppCanvas() {
     try {
       const p = await api.getPipeline(DEMO_ID);
       await loadPipeline(p);
-      // Default demo: select Field Mapper and open with many arrows visible
+      // Select Field Mapper so inspector/actions are ready — do not auto-open overlay
+      // (founder audit: overlay blocked header/canvas until Close/Escape).
       const mapper =
         p.nodes.find((n) => n.id === "field_mapper") ||
         p.nodes.find((n) => isMapperType(n.type));
       if (mapper) {
+        selectedIdRef.current = mapper.id;
         setSelectedId(mapper.id);
-        setMapperOpen(true);
+        setMapperOpen(false);
+        setInspectorFocus("inspector");
+        setSidebarCollapsed((prev) => {
+          if (!prev) return prev;
+          try {
+            localStorage.setItem(SIDEBAR_COLLAPSE_KEY, "0");
+          } catch {
+            /* ignore */
+          }
+          return false;
+        });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -445,15 +467,50 @@ function AppCanvas() {
       });
   }, [loadDemo]);
 
+  useEffect(() => {
+    if (!fileMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const el = fileMenuRef.current;
+      if (el && !el.contains(e.target as HTMLElement)) setFileMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFileMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [fileMenuOpen]);
+
+  useEffect(() => {
+    if (validateResult) {
+      setRailOpen((r) => ({ ...r, validate: true }));
+    }
+  }, [validateResult]);
+
   const selected = useMemo(
     () => nodes.find((n) => n.id === selectedId) || null,
     [nodes, selectedId],
   );
 
+  const expandInspectorSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      if (!prev) return prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSE_KEY, "0");
+      } catch {
+        /* ignore */
+      }
+      return false;
+    });
+  }, []);
+
   const scrollInspectorIntoView = useCallback((join?: boolean) => {
     requestAnimationFrame(() => {
       const section = document.querySelector(".inspector-section");
-      section?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      section?.scrollIntoView({ behavior: "smooth", block: "start" });
       if (join) {
         document.querySelector("[data-testid='join-config']")?.scrollIntoView({
           behavior: "smooth",
@@ -491,15 +548,7 @@ function AppCanvas() {
       }
       setMapperOpen(false);
       // Inspector lives in the right sidebar — expand if collapsed
-      setSidebarCollapsed((prev) => {
-        if (!prev) return prev;
-        try {
-          localStorage.setItem(SIDEBAR_COLLAPSE_KEY, "0");
-        } catch {
-          /* ignore */
-        }
-        return false;
-      });
+      expandInspectorSidebar();
       if (isLookupType(componentType)) {
         setInspectorFocus("join");
         scrollInspectorIntoView(true);
@@ -508,7 +557,7 @@ function AppCanvas() {
       setInspectorFocus("inspector");
       scrollInspectorIntoView(false);
     },
-    [scrollInspectorIntoView],
+    [expandInspectorSidebar, scrollInspectorIntoView],
   );
 
   const studioActions = useMemo<StudioNodeActions>(
@@ -516,24 +565,29 @@ function AppCanvas() {
     [openMapper, activateNode],
   );
 
-  const onNodeClick = useCallback((_: unknown, n: Node) => {
-    const prevId = selectedIdRef.current;
-    selectedIdRef.current = n.id;
-    setSelectedId(n.id);
-    setDiscoverMsg(null);
-    setCanvasFocused(true);
-    if (keepMapperOpenRef.current) {
-      keepMapperOpenRef.current = false;
-      return;
-    }
-    if (n.id === prevId) {
-      // Same already-selected node: do not close mapper (first click of a
-      // double-click used to unmount the overlay and made open feel laggy).
-      return;
-    }
-    setInspectorFocus(null);
-    setMapperOpen(false);
-  }, []);
+  const onNodeClick = useCallback(
+    (_: unknown, n: Node) => {
+      const prevId = selectedIdRef.current;
+      selectedIdRef.current = n.id;
+      setSelectedId(n.id);
+      setDiscoverMsg(null);
+      setCanvasFocused(true);
+      if (keepMapperOpenRef.current) {
+        keepMapperOpenRef.current = false;
+        return;
+      }
+      if (n.id === prevId) {
+        // Same already-selected node: do not close mapper (first click of a
+        // double-click used to unmount the overlay and made open feel laggy).
+        return;
+      }
+      setMapperOpen(false);
+      expandInspectorSidebar();
+      setInspectorFocus("inspector");
+      scrollInspectorIntoView(false);
+    },
+    [expandInspectorSidebar, scrollInspectorIntoView],
+  );
 
   const onNodeDoubleClick = useCallback(
     (_: unknown, n: Node) => {
@@ -1019,36 +1073,67 @@ function AppCanvas() {
           >
             {saveBusy ? "Saving…" : "Save"}
           </button>
-          <button
-            type="button"
-            className="btn"
-            data-testid="export-pipeline-json"
-            onClick={() => void onExportPipeline("json")}
-            disabled={busy || !pipeline}
-            title="Download pipeline JSON"
+          <details
+            className={`file-menu${fileMenuOpen ? " is-open" : ""}`}
+            ref={fileMenuRef}
+            open={fileMenuOpen}
+            onToggle={(e) => {
+              setFileMenuOpen((e.target as HTMLDetailsElement).open);
+            }}
+            data-testid="file-menu-details"
           >
-            Export JSON
-          </button>
-          <button
-            type="button"
-            className="btn"
-            data-testid="export-pipeline-zip"
-            onClick={() => void onExportPipeline("zip")}
-            disabled={busy || !pipeline}
-            title="Download zip with JSON + README"
-          >
-            Export zip
-          </button>
-          <button
-            type="button"
-            className="btn"
-            data-testid="copy-git-commands"
-            onClick={() => void onCopyGitCommands()}
-            disabled={!pipeline}
-            title="Copy git add/commit commands for this pipeline file"
-          >
-            Copy git commands
-          </button>
+            <summary
+              className="btn"
+              data-testid="file-menu"
+              title="Export or copy git commands"
+            >
+              File
+            </summary>
+            <div className="file-menu-dropdown" role="menu" data-testid="file-menu-dropdown">
+              <button
+                type="button"
+                role="menuitem"
+                className="file-menu-item"
+                data-testid="export-pipeline-json"
+                disabled={busy || !pipeline}
+                title="Download pipeline JSON"
+                onClick={() => {
+                  setFileMenuOpen(false);
+                  void onExportPipeline("json");
+                }}
+              >
+                Export JSON
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="file-menu-item"
+                data-testid="export-pipeline-zip"
+                disabled={busy || !pipeline}
+                title="Download zip with JSON + README"
+                onClick={() => {
+                  setFileMenuOpen(false);
+                  void onExportPipeline("zip");
+                }}
+              >
+                Export zip
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="file-menu-item"
+                data-testid="copy-git-commands"
+                disabled={!pipeline}
+                title="Copy git add/commit commands for this pipeline file"
+                onClick={() => {
+                  setFileMenuOpen(false);
+                  void onCopyGitCommands();
+                }}
+              >
+                Copy git commands
+              </button>
+            </div>
+          </details>
           <button
             type="button"
             className="btn"
@@ -1202,222 +1287,14 @@ function AppCanvas() {
         </div>
 
         <aside
-          className={`sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}
+          className={`sidebar${sidebarCollapsed ? " is-collapsed" : ""}${selected ? " has-node-selection" : ""}`}
           data-testid="right-sidebar"
           aria-hidden={sidebarCollapsed}
         >
-          <div className="sidebar-section">
-            <h3>Pipeline</h3>
-            {pipeline ? (
-              <>
-                <p className="pipeline-title">{pipeline.name}</p>
-                <p className="pipeline-desc">{pipeline.description || "No description"}</p>
-              </>
-            ) : (
-              <p className="empty-hint">Use the palette, New blank, Load demo, or AI Build.</p>
-            )}
-          </div>
-
-          <div className="sidebar-section">
-            <h3>Schedule</h3>
-            {pipeline ? (
-              <div className="schedule-form" data-testid="schedule-form">
-                <label className="schedule-row">
-                  <input
-                    type="checkbox"
-                    checked={scheduleEnabled}
-                    onChange={(e) => setScheduleEnabled(e.target.checked)}
-                    data-testid="schedule-enabled"
-                  />
-                  <span>Enable schedule</span>
-                </label>
-                <label className="field-label">Cron expression</label>
-                <input
-                  className="schedule-input"
-                  value={scheduleCron}
-                  onChange={(e) => setScheduleCron(e.target.value)}
-                  placeholder="*/5 * * * *"
-                  data-testid="schedule-cron"
-                />
-                <label className="field-label">Timezone</label>
-                <input
-                  className="schedule-input"
-                  value={scheduleTz}
-                  onChange={(e) => setScheduleTz(e.target.value)}
-                  placeholder="UTC"
-                  data-testid="schedule-tz"
-                />
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={scheduleBusy}
-                  onClick={saveSchedule}
-                  data-testid="schedule-save"
-                >
-                  {scheduleBusy ? "Saving…" : "Save schedule"}
-                </button>
-                {scheduleInfo && (
-                  <p className="schedule-info" data-testid="schedule-next-run">
-                    {scheduleInfo}
-                  </p>
-                )}
-                <p className="schedule-note">
-                  Community self-hosted scheduler. Cloud HA scheduling is a planned Enterprise lock.
-                </p>
-              </div>
-            ) : (
-              <p className="empty-hint">Open a pipeline (palette / blank / demo) to schedule runs.</p>
-            )}
-          </div>
-
-          <div className="sidebar-section" data-testid="last-run-panel">
-            <h3>Last run</h3>
-            {run ? (
-              <>
-                <div style={{ marginBottom: "0.6rem" }}>
-                  <span className={`status-pill ${run.status}`}>{run.status}</span>
-                  <span style={{ marginLeft: 8, fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                    {run.duration_ms != null ? `${Math.round(run.duration_ms)} ms` : ""}
-                  </span>
-                </div>
-                <div className="metrics-grid">
-                  <div className="metric">
-                    <div className="metric-label">Rows in</div>
-                    <div className="metric-value accent">
-                      {run.summary?.rows_in ?? metrics.rows_in ?? "—"}
-                    </div>
-                  </div>
-                  <div className="metric">
-                    <div className="metric-label">Rows out</div>
-                    <div className="metric-value ok">
-                      {run.summary?.rows_out ?? metrics.rows_out ?? "—"}
-                    </div>
-                  </div>
-                  <div className="metric">
-                    <div className="metric-label">Rejected</div>
-                    <div className="metric-value warn">
-                      {run.summary?.rows_rejected ?? metrics.rows_rejected ?? "—"}
-                    </div>
-                  </div>
-                  <div className="metric">
-                    <div className="metric-label">Duration</div>
-                    <div className="metric-value">
-                      {run.duration_ms != null ? `${Math.round(run.duration_ms)}` : "—"}
-                    </div>
-                  </div>
-                </div>
-                {run.node_runs && run.node_runs.length > 0 && (
-                  <div className="node-runs" data-testid="node-runs" style={{ marginTop: "0.65rem" }}>
-                    <div
-                      style={{
-                        fontSize: "0.68rem",
-                        color: "var(--text-muted)",
-                        marginBottom: 4,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      Nodes
-                    </div>
-                    {run.node_runs.map((nr, i) => (
-                      <div
-                        key={String(nr.node_id || i)}
-                        style={{
-                          fontSize: "0.72rem",
-                          display: "grid",
-                          gridTemplateColumns: "1fr auto",
-                          gap: 4,
-                          padding: "2px 0",
-                          borderBottom: "1px solid var(--border, #e5e5e5)",
-                        }}
-                      >
-                        <span>
-                          <span className={`status-pill ${nr.status || ""}`} style={{ fontSize: "0.6rem" }}>
-                            {nr.status || "—"}
-                          </span>{" "}
-                          {nr.node_id}
-                          {nr.component_type ? (
-                            <span style={{ color: "var(--text-muted)" }}> · {nr.component_type}</span>
-                          ) : null}
-                        </span>
-                        <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                          {nr.rows_in ?? 0}→{nr.rows_out ?? 0}
-                          {(nr.rows_rejected ?? 0) > 0 ? ` ✗${nr.rows_rejected}` : ""}
-                          {nr.duration_ms != null ? ` · ${Math.round(Number(nr.duration_ms))}ms` : ""}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {run.events && run.events.length > 0 && (
-                  <div className="run-events" data-testid="run-events" style={{ marginTop: "0.55rem" }}>
-                    <div
-                      style={{
-                        fontSize: "0.68rem",
-                        color: "var(--text-muted)",
-                        marginBottom: 4,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      Events ({run.summary?.event_count ?? run.events.length})
-                    </div>
-                    {run.events.slice(-6).map((ev, i) => (
-                      <div key={i} style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                        {ev.from_status || "—"} → {ev.to_status || "—"}
-                        {ev.message ? ` · ${ev.message}` : ""}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="empty-hint">Run the pipeline to see metrics.</p>
-            )}
-          </div>
-
-          {validateResult && (
-            <div className="sidebar-section" data-testid="validate-panel">
-              <h3>Validate {validateResult.ok ? "✓" : "✗"}</h3>
-              <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 0 }}>
-                {validateResult.summary.errors} error(s), {validateResult.summary.warnings} warning(s)
-              </p>
-              <div style={{ maxHeight: 180, overflow: "auto" }}>
-                {validateResult.checks
-                  .filter((c) => c.severity !== "ok")
-                  .concat(validateResult.checks.filter((c) => c.severity === "ok").slice(0, 3))
-                  .map((c, i) => (
-                    <div key={i} style={{ fontSize: "0.72rem", marginBottom: 4 }}>
-                      {c.symbol || ""} {c.node_id ? `${c.node_id}: ` : ""}
-                      {c.message}
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          <div className="sidebar-section logs-panel" data-testid="logs-panel">
-            <h3>Logs</h3>
-            <div className="logs" data-testid="run-logs">
-              {run?.logs?.length
-                ? run.logs.map((line, i) => (
-                    <div
-                      key={i}
-                      className={
-                        line.includes("FAILED")
-                          ? "err"
-                          : line.includes("successfully") || line.includes("✓")
-                            ? "ok-line"
-                            : undefined
-                      }
-                    >
-                      {line}
-                    </div>
-                  ))
-                : "No logs yet."}
-            </div>
-          </div>
-          <div className="sidebar-section inspector-section">
+          <div
+            className={`sidebar-section inspector-section${selected ? " has-selection" : ""}`}
+            data-testid="inspector-section"
+          >
             <h3>Node inspector</h3>
             {selected && selectedData ? (
               <>
@@ -1499,6 +1376,46 @@ function AppCanvas() {
                     )}
                   </div>
                 )}
+                {(selectedData.componentType.endsWith("_destination") ||
+                  selectedData.componentType.startsWith("databricks") ||
+                  selectedData.componentType.includes("snowflake")) && (
+                  <div className="inspector-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      data-testid="test-connection"
+                      onClick={() => {
+                        const params =
+                          componentByType[selectedData.componentType]?.parameters || [];
+                        const missing = missingRequiredKeys(
+                          selectedData.config || {},
+                          params,
+                        );
+                        if (missing.length) {
+                          setDiscoverMsg(`Missing required: ${missing.join(", ")}`);
+                          return;
+                        }
+                        const demo =
+                          Boolean(selectedData.config?.demo) || Boolean(health?.demo_mode);
+                        setDiscoverMsg(
+                          demo
+                            ? "Demo mode — params look complete; live connection not probed."
+                            : "Params look complete — use Validate / Run to exercise the sink.",
+                        );
+                      }}
+                    >
+                      Test connection
+                    </button>
+                    <p className="mapper-hint" data-testid="sink-inspector-hint">
+                      Configure params here — double-click Field Mapper for mapping.
+                    </p>
+                    {discoverMsg && (
+                      <p className="discover-msg" data-testid="discover-msg">
+                        {discoverMsg}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <NodeInspector
                   nodeId={selected.id}
                   componentType={selectedData.componentType}
@@ -1517,6 +1434,297 @@ function AppCanvas() {
             )}
           </div>
 
+          <div
+            className={`sidebar-section sidebar-pipeline rail-accordion${railOpen.pipeline || !selected ? " is-open" : ""}${selected ? " is-secondary" : ""}`}
+            data-testid="pipeline-panel"
+          >
+            <button
+              type="button"
+              className="rail-accordion-toggle"
+              data-testid="rail-pipeline-toggle"
+              aria-expanded={railOpen.pipeline || !selected}
+              onClick={() => setRailOpen((r) => ({ ...r, pipeline: !r.pipeline }))}
+            >
+              <h3>Pipeline</h3>
+              <span className="rail-accordion-chevron" aria-hidden>
+                {railOpen.pipeline || !selected ? "▾" : "▸"}
+              </span>
+            </button>
+            {(railOpen.pipeline || !selected) && (
+              pipeline ? (
+                <>
+                  <p className="pipeline-title">{pipeline.name}</p>
+                  <p className="pipeline-desc">{pipeline.description || "No description"}</p>
+                </>
+              ) : (
+                <p className="empty-hint">Use the palette, New blank, Load demo, or AI Build.</p>
+              )
+            )}
+          </div>
+
+          <div className={`sidebar-section rail-accordion${railOpen.schedule ? " is-open" : ""}`}>
+            <button
+              type="button"
+              className="rail-accordion-toggle"
+              data-testid="rail-schedule-toggle"
+              aria-expanded={railOpen.schedule}
+              onClick={() => setRailOpen((r) => ({ ...r, schedule: !r.schedule }))}
+            >
+              <h3>Schedule</h3>
+              <span className="rail-accordion-chevron" aria-hidden>
+                {railOpen.schedule ? "▾" : "▸"}
+              </span>
+            </button>
+            {railOpen.schedule && (
+              pipeline ? (
+                <div className="schedule-form" data-testid="schedule-form">
+                  <label className="schedule-row">
+                    <input
+                      type="checkbox"
+                      checked={scheduleEnabled}
+                      onChange={(e) => setScheduleEnabled(e.target.checked)}
+                      data-testid="schedule-enabled"
+                    />
+                    <span>Enable schedule</span>
+                  </label>
+                  <label className="field-label">Cron expression</label>
+                  <input
+                    className="schedule-input"
+                    value={scheduleCron}
+                    onChange={(e) => setScheduleCron(e.target.value)}
+                    placeholder="*/5 * * * *"
+                    data-testid="schedule-cron"
+                  />
+                  <label className="field-label">Timezone</label>
+                  <input
+                    className="schedule-input"
+                    value={scheduleTz}
+                    onChange={(e) => setScheduleTz(e.target.value)}
+                    placeholder="UTC"
+                    data-testid="schedule-tz"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={scheduleBusy}
+                    onClick={saveSchedule}
+                    data-testid="schedule-save"
+                  >
+                    {scheduleBusy ? "Saving…" : "Save schedule"}
+                  </button>
+                  {scheduleInfo && (
+                    <p className="schedule-info" data-testid="schedule-next-run">
+                      {scheduleInfo}
+                    </p>
+                  )}
+                  <p className="schedule-note">
+                    Community self-hosted scheduler. Cloud HA scheduling is a planned Enterprise lock.
+                  </p>
+                </div>
+              ) : (
+                <p className="empty-hint">Open a pipeline (palette / blank / demo) to schedule runs.</p>
+              )
+            )}
+          </div>
+
+          <div
+            className={`sidebar-section rail-accordion${railOpen.lastRun ? " is-open" : ""}`}
+            data-testid="last-run-panel"
+          >
+            <button
+              type="button"
+              className="rail-accordion-toggle"
+              data-testid="rail-lastrun-toggle"
+              aria-expanded={railOpen.lastRun}
+              onClick={() => setRailOpen((r) => ({ ...r, lastRun: !r.lastRun }))}
+            >
+              <h3>Last run</h3>
+              <span className="rail-accordion-chevron" aria-hidden>
+                {railOpen.lastRun ? "▾" : "▸"}
+              </span>
+            </button>
+            {railOpen.lastRun && (
+              run ? (
+                <>
+                  <div style={{ marginBottom: "0.6rem" }}>
+                    <span className={`status-pill ${run.status}`}>{run.status}</span>
+                    <span style={{ marginLeft: 8, fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                      {run.duration_ms != null ? `${Math.round(run.duration_ms)} ms` : ""}
+                    </span>
+                  </div>
+                  <div className="metrics-grid">
+                    <div className="metric">
+                      <div className="metric-label">Rows in</div>
+                      <div className="metric-value accent">
+                        {run.summary?.rows_in ?? metrics.rows_in ?? "—"}
+                      </div>
+                    </div>
+                    <div className="metric">
+                      <div className="metric-label">Rows out</div>
+                      <div className="metric-value ok">
+                        {run.summary?.rows_out ?? metrics.rows_out ?? "—"}
+                      </div>
+                    </div>
+                    <div className="metric">
+                      <div className="metric-label">Rejected</div>
+                      <div className="metric-value warn">
+                        {run.summary?.rows_rejected ?? metrics.rows_rejected ?? "—"}
+                      </div>
+                    </div>
+                    <div className="metric">
+                      <div className="metric-label">Duration</div>
+                      <div className="metric-value">
+                        {run.duration_ms != null ? `${Math.round(run.duration_ms)}` : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  {run.node_runs && run.node_runs.length > 0 && (
+                    <div className="node-runs" data-testid="node-runs" style={{ marginTop: "0.65rem" }}>
+                      <div
+                        style={{
+                          fontSize: "0.68rem",
+                          color: "var(--text-muted)",
+                          marginBottom: 4,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        Nodes
+                      </div>
+                      {run.node_runs.map((nr, i) => (
+                        <div
+                          key={String(nr.node_id || i)}
+                          style={{
+                            fontSize: "0.72rem",
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto",
+                            gap: 4,
+                            padding: "2px 0",
+                            borderBottom: "1px solid var(--border, #e5e5e5)",
+                          }}
+                        >
+                          <span>
+                            <span className={`status-pill ${nr.status || ""}`} style={{ fontSize: "0.6rem" }}>
+                              {nr.status || "—"}
+                            </span>{" "}
+                            {nr.node_id}
+                            {nr.component_type ? (
+                              <span style={{ color: "var(--text-muted)" }}> · {nr.component_type}</span>
+                            ) : null}
+                          </span>
+                          <span style={{ color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                            {nr.rows_in ?? 0}→{nr.rows_out ?? 0}
+                            {(nr.rows_rejected ?? 0) > 0 ? ` ✗${nr.rows_rejected}` : ""}
+                            {nr.duration_ms != null ? ` · ${Math.round(Number(nr.duration_ms))}ms` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {run.events && run.events.length > 0 && (
+                    <div className="run-events" data-testid="run-events" style={{ marginTop: "0.55rem" }}>
+                      <div
+                        style={{
+                          fontSize: "0.68rem",
+                          color: "var(--text-muted)",
+                          marginBottom: 4,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        Events ({run.summary?.event_count ?? run.events.length})
+                      </div>
+                      {run.events.slice(-6).map((ev, i) => (
+                        <div key={i} style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                          {ev.from_status || "—"} → {ev.to_status || "—"}
+                          {ev.message ? ` · ${ev.message}` : ""}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="empty-hint">Run the pipeline to see metrics.</p>
+              )
+            )}
+          </div>
+
+          {validateResult && (
+            <div
+              className={`sidebar-section rail-accordion${railOpen.validate ? " is-open" : ""}`}
+              data-testid="validate-panel"
+            >
+              <button
+                type="button"
+                className="rail-accordion-toggle"
+                data-testid="rail-validate-toggle"
+                aria-expanded={railOpen.validate}
+                onClick={() => setRailOpen((r) => ({ ...r, validate: !r.validate }))}
+              >
+                <h3>Validate {validateResult.ok ? "✓" : "✗"}</h3>
+                <span className="rail-accordion-chevron" aria-hidden>
+                  {railOpen.validate ? "▾" : "▸"}
+                </span>
+              </button>
+              {railOpen.validate && (
+                <>
+                  <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 0 }}>
+                    {validateResult.summary.errors} error(s), {validateResult.summary.warnings}{" "}
+                    warning(s)
+                  </p>
+                  <div style={{ maxHeight: 180, overflow: "auto" }}>
+                    {validateResult.checks
+                      .filter((c) => c.severity !== "ok")
+                      .concat(validateResult.checks.filter((c) => c.severity === "ok").slice(0, 3))
+                      .map((c, i) => (
+                        <div key={i} style={{ fontSize: "0.72rem", marginBottom: 4 }}>
+                          {c.symbol || ""} {c.node_id ? `${c.node_id}: ` : ""}
+                          {c.message}
+                        </div>
+                      ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <div
+            className={`sidebar-section logs-panel rail-accordion${railOpen.logs ? " is-open" : ""}`}
+            data-testid="logs-panel"
+          >
+            <button
+              type="button"
+              className="rail-accordion-toggle"
+              data-testid="rail-logs-toggle"
+              aria-expanded={railOpen.logs}
+              onClick={() => setRailOpen((r) => ({ ...r, logs: !r.logs }))}
+            >
+              <h3>Logs</h3>
+              <span className="rail-accordion-chevron" aria-hidden>
+                {railOpen.logs ? "▾" : "▸"}
+              </span>
+            </button>
+            {railOpen.logs && (
+              <div className="logs" data-testid="run-logs">
+                {run?.logs?.length
+                  ? run.logs.map((line, i) => (
+                      <div
+                        key={i}
+                        className={
+                          line.includes("FAILED")
+                            ? "err"
+                            : line.includes("successfully") || line.includes("✓")
+                              ? "ok-line"
+                              : undefined
+                        }
+                      >
+                        {line}
+                      </div>
+                    ))
+                  : "No logs yet."}
+              </div>
+            )}
+          </div>
         </aside>
       </div>
 
