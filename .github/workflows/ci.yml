@@ -28,10 +28,12 @@ jobs:
           FORMULAETL_DEMO: "1"
 
       - name: Pytest
-        run: python3 -m pytest tests -q --tb=short
+        # Exclude live marker — LIVE_CLOUD wedge is manual/design-partner only
+        run: python3 -m pytest tests -q --tb=short -m "not live"
         env:
           FORMULAETL_DEMO: "1"
           # conftest also forces DEMO=1; no live cloud credentials in CI
+          # Do NOT set RUN_LIVE_WEDGE here
 
   web-build:
     name: npm build (optional web)
@@ -53,4 +55,5 @@ jobs:
 
 # Live connector E2E (AWS/SFTP/Snowflake/Kafka/Databricks/Postgres) is intentionally
 # NOT run here. Design partners prove live paths manually — see
-# docs/design-partner/PRODUCTION_CHECKLIST.md
+# docs/design-partner/LIVE_WEDGE.md and PRODUCTION_CHECKLIST.md
+# Harness: scripts/live_wedge_e2e.py / tests/live (marker: live)

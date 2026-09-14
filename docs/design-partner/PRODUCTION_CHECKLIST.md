@@ -16,9 +16,11 @@ Use this before putting **real** credentials or customer data on a private deplo
 
 ## Prove yourself (manual — not GitHub Actions)
 
-- [ ] One live source read (S3 or SFTP or Postgres) with partner credentials
-- [ ] One live destination or side effect you accept (file, warehouse INSERT, Jobs API) with evidence saved outside this repo if needed
-- [ ] Inspect `GET /api/runs/{id}` → `summary`, `node_runs`, `events` for that live run
+- [ ] `python3 scripts/live_wedge_e2e.py --check` shows credentials ready (see [`LIVE_WEDGE.md`](./LIVE_WEDGE.md))
+- [ ] `RUN_LIVE_WEDGE=1 FORMULAETL_DEMO=0 python3 scripts/live_wedge_e2e.py` succeeds; paste redacted JSON into `PRODUCTION_EVIDENCE.md` section C as **PROVEN** with SHA + date
+- [ ] One live source read (S3 or SFTP) with partner credentials
+- [ ] One live destination (Postgres or Snowflake INSERT) with evidence you accept
+- [ ] Inspect `GET /api/runs/{id}` → `summary`, `node_runs`, `events` for that live run (if run via API)
 
 ## Do not claim yet
 

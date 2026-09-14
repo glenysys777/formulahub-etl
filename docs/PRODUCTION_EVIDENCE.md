@@ -19,7 +19,7 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 | ID | Claim | Status | Command | Result | SHA | Date |
 |----|-------|--------|---------|--------|-----|------|
-| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q` | **154 passed**, 1 skipped (`RUN_CSV_1M`), warnings (pgpy). Includes Phase G validate (+8). `FORMULAETL_DEMO=1` via conftest. Not live AWS/SFTP. | this PR | 2026-09-14 |
+| A1 | Pytest suite on `tests/` | PROVEN | `python3 scripts/seed_demo.py && python3 -m pytest tests -q -m "not live"` | **158 passed**, 1 skipped (`RUN_CSV_1M`), 1 deselected (`live`). Includes Phase G validate + live-harness unit tests. `FORMULAETL_DEMO=1`. Not live AWS/SFTP. | this PR | 2026-09-14 |
 | A2 | Web production build | PROVEN | `cd apps/web && npm run build` | Optional CI job `web-build` | this PR | 2026-09-14 |
 | A3 | GitHub Actions CI on `main` / PRs | PROVEN | `.github/workflows/ci.yml` | pytest + DEMO=1; optional npm build. **No live cloud checks.** | this PR | 2026-09-14 |
 | A4 | Default env is demo | PROVEN | Read `tests/conftest.py` | Tests force `FORMULAETL_DEMO=1` | `cecb1af` | 2026-09-14 |
@@ -37,9 +37,19 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 
 ---
 
-## C. Live systems (customer-shaped)
+## C. Live systems (customer-shaped) — classification **LIVE_CLOUD**
 
-Unchanged — all **UNPROVEN**. Live E2E remains **manual / design-partner** (see `docs/design-partner/PRODUCTION_CHECKLIST.md`). CI deliberately does not hit customer clouds.
+| ID | Claim | Status | Command | Result | SHA | Date |
+|----|-------|--------|---------|--------|-----|------|
+| C0 | Live wedge harness exists (S3\|SFTP→PGP→CSV→validate→map→PG\|SF→archive) | PROVEN **harness only** | `python3 scripts/live_wedge_e2e.py --check` + unit tests | Gate skips without creds; CI uses `-m "not live"`. Does **not** prove cloud connectivity. | this PR | 2026-09-14 |
+| C1 | Live AWS S3 read in wedge | UNPROVEN | `RUN_LIVE_WEDGE=1 FORMULAETL_DEMO=0` + `LIVE_S3_*` / AWS creds | Not run in this agent / CI | — | — |
+| C2 | Live SFTP read in wedge | UNPROVEN | `LIVE_SOURCE=sftp` + `LIVE_SFTP_*` | Not run | — | — |
+| C3 | Live PGP decrypt with partner key | UNPROVEN | `LIVE_PGP_PRIVATE_KEY_PATH` | Not run | — | — |
+| C4 | Live Postgres load in wedge | UNPROVEN | `LIVE_DEST=postgres` + `LIVE_POSTGRES_*` | Not run | — | — |
+| C5 | Live Snowflake load in wedge | UNPROVEN | `LIVE_DEST=snowflake` + `LIVE_SNOWFLAKE_*` | Not run | — | — |
+| C6 | Full live wedge E2E (source→archive) | UNPROVEN | `docs/design-partner/LIVE_WEDGE.md` | **Do not mark PROVEN** until a real run’s JSON (redacted) is pasted here with SHA + date | — | — |
+
+CI never sets `RUN_LIVE_WEDGE`. Green Actions ≠ LIVE_CLOUD PROVEN.
 
 ---
 
@@ -78,13 +88,14 @@ Merged on main as `3d1d9c9`. See prior H1–H8 claims (connections CRUD, test, S
 | I2 | Optional body validates unsaved canvas | PROVEN | Validate accepts nodes/edges without requiring prior PUT |
 | I3 | GET run `summary` + clear node_runs/events | PROVEN | `summary.{rows_*,duration_ms,nodes_*,event_count}`; UI Last run shows node table |
 | I4 | Design-partner docs pack | PROVEN | `docs/design-partner/{DEPLOYMENT,SECURITY,CONNECTIONS,BACKUP,TROUBLESHOOTING,PRODUCTION_CHECKLIST}.md` — DEMO vs live honesty |
-| I5 | GitHub Actions CI | PROVEN | `.github/workflows/ci.yml` — pytest DEMO=1 + npm build; no fake live cloud |
+| I5 | GitHub Actions CI | PROVEN | `.github/workflows/ci.yml` — pytest DEMO=1 `-m "not live"` + npm build; no fake live cloud |
 | I6 | UI Validate button | PROVEN | `apps/web` topbar → validate API |
+| I7 | LIVE_CLOUD wedge harness (opt-in) | PROVEN **harness** / UNPROVEN **cloud** | `scripts/live_wedge_e2e.py`, `tests/live/`, `docs/design-partner/LIVE_WEDGE.md`; see section C |
 
 ### Remaining gaps (honest)
 
-- Live connector E2E still **UNPROVEN** in CI (by design).
-- Validate ≠ live connectivity (use connection test + partner checklist).
+- Live connector E2E still **UNPROVEN** (harness only — section C).
+- Validate ≠ live connectivity (use connection test + live wedge + partner checklist).
 - Not SSO/Vault/Spark/billing/Talend importer/new connectors.
 - Overall live-connector readiness remains **DEMO** until partner proofs.
 

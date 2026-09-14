@@ -13,7 +13,7 @@ seed:
 	python3 scripts/seed_demo.py
 
 test: seed
-	python3 -m pytest tests -v --tb=short
+	python3 -m pytest tests -v --tb=short -m "not live"
 
 demo: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
