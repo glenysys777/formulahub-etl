@@ -5,7 +5,7 @@ Claims in sales/README are **not** evidence. Each row is a statement we are will
 **Audit SHA (main / Phase A merge):** `cecb1af` (PR #4)  
 **Phase B merge tip:** `f2d8b57`  
 **Phase C merge tip:** `dce51a6`  
-**Phase D+E branch tip:** see this PR  
+**Phase D+E branch tip:** `5d719a7`  
 **Agent run date:** 2026-09-14  
 **Python:** 3.12.3 · **Node:** 22.14.0 · **pytest:** 9.1.1
 
