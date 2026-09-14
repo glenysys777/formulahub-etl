@@ -244,6 +244,8 @@ function AppCanvas() {
   const [inspectorFocus, setInspectorFocus] = useState<"inspector" | "join" | null>(null);
   const [discoverBusy, setDiscoverBusy] = useState(false);
   const [discoverMsg, setDiscoverMsg] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [saveBusy, setSaveBusy] = useState(false);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleCron, setScheduleCron] = useState("*/5 * * * *");
   const [scheduleTz, setScheduleTz] = useState("UTC");
@@ -894,6 +896,86 @@ function AppCanvas() {
     schedulePersist();
   };
 
+  const onSavePipeline = async () => {
+    setSaveBusy(true);
+    setError(null);
+    try {
+      let p = pipelineRef.current;
+      if (!p) {
+        p = await ensurePipeline();
+      }
+      const updated = fromFlow(p, nodesRef.current, edgesRef.current);
+      const saved = await api.updatePipeline(p.id, updated);
+      setPipeline({ ...updated, ...saved, nodes: updated.nodes, edges: updated.edges });
+      const path =
+        saved.saved_path ||
+        (health?.work_dir ? `${health.work_dir}/pipelines/${p.id}.json` : `pipelines/${p.id}.json`);
+      setSaveMsg(`Saved to ${path}`);
+      window.setTimeout(() => setSaveMsg(null), 6000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaveBusy(false);
+    }
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const onExportPipeline = async (format: "json" | "zip" = "json") => {
+    if (!pipeline) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Persist first so export matches canvas
+      const updated = fromFlow(pipeline, nodes, edges);
+      const saved = await api.updatePipeline(pipeline.id, updated);
+      setPipeline({ ...updated, ...saved, nodes: updated.nodes, edges: updated.edges });
+      const { blob, filename } = await api.exportPipeline(pipeline.id, format);
+      downloadBlob(blob, filename);
+      setSaveMsg(
+        format === "zip"
+          ? `Exported ${filename} (JSON + README)`
+          : `Exported ${filename}`,
+      );
+      window.setTimeout(() => setSaveMsg(null), 5000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCopyGitCommands = async () => {
+    if (!pipeline) return;
+    const wd = health?.work_dir || ".";
+    const rel = `pipelines/${pipeline.id}.json`;
+    const text = [
+      `cd ${wd}`,
+      "git init   # once per workspace",
+      `git add ${rel}`,
+      `git commit -m "Save pipeline ${pipeline.name.replace(/"/g, '\\"')}"`,
+      "# optional remote (Pro one-click push/pull comes later):",
+      "# git remote add origin <your-repo-url>",
+      "# git push -u origin main",
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setSaveMsg("Git commands copied — paste in a terminal at your workspace");
+      window.setTimeout(() => setSaveMsg(null), 5000);
+    } catch {
+      setError("Could not copy to clipboard");
+    }
+  };
+
   const metrics = run?.metrics || {};
   const selectedData = selected ? (selected.data as EtlNodeData) : null;
 
@@ -930,6 +1012,46 @@ function AppCanvas() {
           <button
             type="button"
             className="btn"
+            data-testid="save-pipeline"
+            onClick={() => void onSavePipeline()}
+            disabled={busy || saveBusy}
+            title="Save canvas to control plane + work_dir/pipelines/{id}.json"
+          >
+            {saveBusy ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-testid="export-pipeline-json"
+            onClick={() => void onExportPipeline("json")}
+            disabled={busy || !pipeline}
+            title="Download pipeline JSON"
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-testid="export-pipeline-zip"
+            onClick={() => void onExportPipeline("zip")}
+            disabled={busy || !pipeline}
+            title="Download zip with JSON + README"
+          >
+            Export zip
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-testid="copy-git-commands"
+            onClick={() => void onCopyGitCommands()}
+            disabled={!pipeline}
+            title="Copy git add/commit commands for this pipeline file"
+          >
+            Copy git commands
+          </button>
+          <button
+            type="button"
+            className="btn"
             data-testid="validate-pipeline"
             onClick={onValidate}
             disabled={busy || !pipeline}
@@ -951,6 +1073,11 @@ function AppCanvas() {
       </header>
 
       {error && <div className="error-banner">{error}</div>}
+      {saveMsg && (
+        <div className="status-toast" data-testid="save-toast" role="status">
+          {saveMsg}
+        </div>
+      )}
 
       <div className={`main${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
         <aside className="palette" data-testid="component-palette" aria-label="Component palette">
@@ -1317,8 +1444,8 @@ function AppCanvas() {
                     </button>
                     <p className="mapper-hint">
                       {selectedData.componentType === "tmap"
-                        ? "Double-click or Enter — Main input · Variables · Output. To merge two sources first, use Lookup Join (Main + Lookup)."
-                        : "Double-click or Enter — map Main input columns to Output. For Variables and expressions, use Field Mapper."}
+                        ? "Double-click or Enter — Input · Variables · Output. To merge two sources first, use Lookup Join (Main + Lookup)."
+                        : "Double-click or Enter — map input columns to Output. For Variables and expressions, use Field Mapper."}
                     </p>
                   </div>
                 )}

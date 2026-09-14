@@ -28,17 +28,22 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 | SFTP / Postgres / MySQL / SQLite Destination | DEMO mocks or local DB | DEMO / ALPHA |
 | Archive Files / Logger | Move inputs; metrics | ALPHA |
 | Scheduler | In-process cron per pipeline | DEMO / ALPHA |
-| Studio chrome | Collapsible inspector, type-to-place, status `work_dir` | ALPHA (this PR) |
+| Studio chrome | Collapsible inspector, type-to-place, status `work_dir`, Save / Export | ALPHA |
+| Project files | Mirror JSON under `{work_dir}/pipelines/`; export JSON/zip | ALPHA |
 
 ## Studio UX (this wave)
 
 - Collapsible right sidebar (persisted) → big canvas workspace
 - Type on focused canvas → quick-add palette (filter · Enter · Esc)
-- Main vs Lookup labeled on Field Mapper / Lookup Join + inspector help
+- **Main / Lookup** labels only on dual-input **Lookup Join** (single-input Schema Map / Field Mapper stay quiet)
+- Double-click any node → expand inspector (mapper still opens overlay)
+- Save + Export JSON; toast shows mirror path; Copy git commands
 - Field Mapper Variables: expression helper chips (string / math / null; date honest DEMO limits)
 - Status bar: `workspace on this machine · {work_dir}`
+- Projects + Git → see `PROJECTS_AND_GIT.md`
 
 ## Explicitly not in this wave
 
 - No new connector types
+- No GitHub OAuth / one-click remote (Pro later)
 - Desktop `.app` shell → see `DESKTOP_SHELL.md` (next wave)
