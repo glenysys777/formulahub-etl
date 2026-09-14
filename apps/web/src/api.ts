@@ -23,6 +23,10 @@ export type Pipeline = {
   nodes: PipelineNode[];
   edges: PipelineEdge[];
   metadata?: Record<string, unknown>;
+  /** Absolute path to mirror JSON under work_dir/pipelines/ (when present). */
+  saved_path?: string;
+  pipeline_version_id?: string;
+  version?: string;
 };
 
 export type RunStatus = {
@@ -167,6 +171,23 @@ export const api = {
     req<Pipeline>("/api/pipelines", { method: "POST", body: JSON.stringify(body) }),
   updatePipeline: (id: string, body: Partial<Pipeline>) =>
     req<Pipeline>(`/api/pipelines/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  importPipeline: (body: Partial<Pipeline>) =>
+    req<Pipeline>("/api/pipelines/import", { method: "POST", body: JSON.stringify(body) }),
+  exportPipeline: async (id: string, format: "json" | "zip" = "json") => {
+    const res = await fetch(
+      `${API_BASE}/api/pipelines/${id}/export?format=${format}`,
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `${res.status} ${res.statusText}`);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = /filename="([^"]+)"/i.exec(disposition);
+    const filename =
+      match?.[1] || (format === "zip" ? `${id}.zip` : `${id}.json`);
+    return { blob, filename };
+  },
   runPipeline: (id: string) =>
     req<{ run_id: string; status: string }>(`/api/pipelines/${id}/run`, { method: "POST" }),
   validatePipeline: (

@@ -14,18 +14,23 @@ Phase F:
 Phase G:
   - POST /api/pipelines/{id}/validate — structured preflight (graph, params, refs)
   - GET /api/runs/{id} includes ``summary`` + clear node_runs / events
+  - Pipeline mirror JSON under ``{work_dir}/pipelines/``; export JSON/zip; import
 """
 
 from __future__ import annotations
 
+import io
+import json
 import os
+import re
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -164,7 +169,67 @@ def _mask_pipeline_dict(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _pipelines_mirror_dir() -> Path:
+    """Community project files: ``{work_dir}/pipelines/{id}.json`` next to the workspace."""
+    d = WORK_DIR / "pipelines"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _safe_export_stem(name: str, pipeline_id: str) -> str:
+    stem = re.sub(r"[^\w.\-]+", "-", (name or "").strip(), flags=re.UNICODE).strip("-")
+    if not stem:
+        stem = pipeline_id
+    return stem[:80]
+
+
+def _mirror_pipeline_to_disk(pipeline: PipelineDefinition) -> str:
+    """Write pretty JSON mirror under work_dir/pipelines/ (SQLite remains source of truth)."""
+    path = _pipelines_mirror_dir() / f"{pipeline.id}.json"
+    dump = pipeline.model_dump(mode="json")
+    path.write_text(
+        json.dumps(dump, indent=2, ensure_ascii=False, default=str) + "\n",
+        encoding="utf-8",
+    )
+    return str(path.resolve())
+
+
+def _remove_pipeline_mirror(pipeline_id: str) -> None:
+    path = WORK_DIR / "pipelines" / f"{pipeline_id}.json"
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _export_readme(pipeline: PipelineDefinition, json_name: str) -> str:
+    return (
+        f"# {pipeline.name}\n\n"
+        "Exported from FormulaHub ETL Studio.\n\n"
+        "## Contents\n\n"
+        f"- `{json_name}` — pipeline graph (nodes, edges, config)\n\n"
+        "## Run elsewhere\n\n"
+        "1. Place this folder under a FormulaHub ETL workspace (`FORMULAETL_WORK_DIR`).\n"
+        "2. Import via Studio **or** `POST /api/pipelines/import` with the JSON body.\n"
+        "3. Or copy the JSON into `{work_dir}/pipelines/` and open the pipeline by id.\n\n"
+        "Secrets are not embedded — reconnect Connections / env secrets on the target machine.\n\n"
+        "See `docs/studio/PROJECTS_AND_GIT.md` for Save → disk → Git workflow.\n"
+    )
+
+
 class PipelineCreate(BaseModel):
+    name: str
+    description: str = ""
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    edges: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    id: str | None = None
+
+
+class PipelineImport(BaseModel):
+    """Full pipeline JSON (export / mirror file) for import."""
+
     name: str
     description: str = ""
     nodes: list[dict[str, Any]] = Field(default_factory=list)
@@ -483,9 +548,37 @@ def create_pipeline(body: PipelineCreate) -> dict[str, Any]:
         metadata=body.metadata,
     )
     version = pipelines.save(pipeline)
+    saved_path = _mirror_pipeline_to_disk(pipeline)
     out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     out["version"] = str(version.version_num)
+    out["saved_path"] = saved_path
+    return out
+
+
+@app.post("/api/pipelines/import", status_code=201)
+def import_pipeline(body: PipelineImport) -> dict[str, Any]:
+    """Create a pipeline from exported / mirror JSON (new id unless ``id`` is set and unused)."""
+    pid = body.id or str(uuid.uuid4())
+    if body.id and pipelines.get(pid) is not None:
+        # Avoid clobbering an existing head — assign a fresh id.
+        pid = str(uuid.uuid4())
+    meta = dict(body.metadata or {})
+    meta.setdefault("imported", True)
+    pipeline = PipelineDefinition(
+        id=pid,
+        name=body.name,
+        description=body.description,
+        nodes=body.nodes,
+        edges=body.edges,
+        metadata=meta,
+    )
+    version = pipelines.save(pipeline)
+    saved_path = _mirror_pipeline_to_disk(pipeline)
+    out = _mask_pipeline_dict(pipeline.model_dump())
+    out["pipeline_version_id"] = version.id
+    out["version"] = str(version.version_num)
+    out["saved_path"] = saved_path
     return out
 
 
@@ -500,6 +593,9 @@ def get_pipeline(pipeline_id: str) -> dict[str, Any]:
     if ver:
         out["pipeline_version_id"] = ver.id
         out["content_hash"] = ver.content_hash
+    mirror = WORK_DIR / "pipelines" / f"{pipeline_id}.json"
+    if mirror.is_file():
+        out["saved_path"] = str(mirror.resolve())
     return out
 
 
@@ -514,16 +610,56 @@ def update_pipeline(pipeline_id: str, body: PipelineCreate) -> dict[str, Any]:
         metadata=body.metadata,
     )
     version = pipelines.save(pipeline)
+    saved_path = _mirror_pipeline_to_disk(pipeline)
     out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     out["version"] = str(version.version_num)
+    out["saved_path"] = saved_path
     return out
+
+
+@app.get("/api/pipelines/{pipeline_id}/export")
+def export_pipeline(
+    pipeline_id: str,
+    format: str = Query("json", pattern="^(json|zip)$"),
+) -> Response:
+    """Download pipeline JSON (or zip with README) for run-elsewhere / Git workflows."""
+    _ensure_demo_loaded()
+    p = pipelines.get(pipeline_id)
+    if not p:
+        raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+    dump = p.model_dump(mode="json")
+    # Export unmasked graph for round-trip; secrets should be refs, not literals.
+    payload = json.dumps(dump, indent=2, ensure_ascii=False, default=str) + "\n"
+    stem = _safe_export_stem(p.name, pipeline_id)
+    json_name = f"{stem}.json"
+    if format == "zip":
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(json_name, payload)
+            zf.writestr("README.md", _export_readme(p, json_name))
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{stem}.zip"',
+            },
+        )
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{json_name}"',
+        },
+    )
 
 
 @app.delete("/api/pipelines/{pipeline_id}")
 def delete_pipeline(pipeline_id: str) -> dict[str, str]:
     if not pipelines.delete(pipeline_id):
         raise HTTPException(404, f"Pipeline '{pipeline_id}' not found")
+    _remove_pipeline_mirror(pipeline_id)
     return {"status": "deleted", "id": pipeline_id}
 
 
@@ -693,8 +829,10 @@ def ai_build(body: AIBuildRequest) -> dict[str, Any]:
         metadata=pipeline.metadata,
     )
     version = pipelines.save(pipeline)
+    saved_path = _mirror_pipeline_to_disk(pipeline)
     out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
+    out["saved_path"] = saved_path
     return out
 
 

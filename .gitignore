@@ -5,6 +5,7 @@ data/rejects/
 data/tmp/
 data/bench/
 data/pipelines/
+pipelines/
 data/schedules/
 data/*.db
 data/*.db-*

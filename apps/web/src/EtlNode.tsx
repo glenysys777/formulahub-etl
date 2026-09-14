@@ -395,10 +395,10 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
       }}
       title={
         isMapper
-          ? "Double-click to open Field Mapper — Main input on the left"
+          ? "Double-click to open Field Mapper"
           : isLookup
             ? "Double-click to edit join keys — Main (upper) + Lookup (lower)"
-            : "Double-click to open Node Inspector"
+            : "Double-click to configure in Node Inspector"
       }
     >
       {runVisual === "running" && selected && <span className="etl-progress-ring" aria-hidden />}
@@ -453,22 +453,13 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
           </span>
         </>
       ) : isMapper ? (
-        <>
-          <Handle
-            type="target"
-            position={Position.Left}
-            className="etl-handle-main"
-            style={{ background: "#0071e3" }}
-            title="Main input — Field Mapper maps columns on this stream"
-          />
-          <span
-            className="etl-handle-label main"
-            style={{ top: "50%" }}
-            data-testid="handle-label-main"
-          >
-            Main
-          </span>
-        </>
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="etl-handle-in"
+          style={{ background: "#0071e3" }}
+          title="Input — map columns on this stream"
+        />
       ) : (
         <Handle type="target" position={Position.Left} style={{ background: "#aeaeb2" }} />
       )}
@@ -497,7 +488,22 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
           >
             <MapGlyph />
           </button>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            className="etl-open-btn nodrag nopan"
+            data-testid="etl-open-btn"
+            title="Open inspector"
+            aria-label="Open inspector"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              actions?.activateNode(id, d.componentType);
+            }}
+          >
+            ›
+          </button>
+        )}
       </div>
       <div className="etl-node-body" title={bodySummary}>
         {bodySummary}
@@ -508,7 +514,7 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
             {maps ? `Map · ${maps}` : "Map"}
           </span>
           <span className="etl-map-hint" data-testid="etl-map-hint">
-            Main → map
+            Double-click to map
           </span>
         </div>
       ) : isLookup ? (
@@ -518,7 +524,13 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
             Main + Lookup
           </span>
         </div>
-      ) : null}
+      ) : (
+        <div className="etl-node-affordance">
+          <span className="etl-map-hint" data-testid="etl-configure-hint">
+            Double-click to configure
+          </span>
+        </div>
+      )}
       <Handle
         type="source"
         position={Position.Right}

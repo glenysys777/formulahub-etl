@@ -820,11 +820,11 @@ export function SchemaMapper({
       <div className={`schema-mapper-modal${isFieldMapper ? " fullscreen" : ""}`}>
         <header className="schema-mapper-header">
           <div>
-            <h2>Field Mapper</h2>
+            <h2>{isFieldMapper ? "Field Mapper" : "Schema Map"}</h2>
             <p className="schema-mapper-sub">
               {isFieldMapper
-                ? "Main input · Variables · Output — drag handles · helpers for string / math / null · Esc closes"
-                : "Map Main input columns to targets · drag handles · Delete removes a link · Esc closes"}
+                ? "Input · Variables · Output — drag handles · helpers for string / math / null · Esc closes"
+                : "Map input columns to targets · drag handles · Delete removes a link · Esc closes"}
             </p>
           </div>
           <button type="button" className="btn" onClick={onClose}>
@@ -942,7 +942,7 @@ export function SchemaMapper({
 
           <div className="sm-pane sm-source-pane" ref={sourcePaneRef}>
             <div className="sm-pane-label sticky">
-              <span className="sm-pane-badge source">Input · Main</span>
+              <span className="sm-pane-badge source">Input</span>
               <span className="sm-pane-meta">{filteredSources.length} columns</span>
             </div>
             <div className="sm-search">
