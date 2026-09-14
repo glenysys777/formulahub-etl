@@ -1,0 +1,10 @@
+{
+  "host": "https://dbc-25bc9366-e85a.cloud.databricks.com",
+  "warehouse_id": "617c835e972f0216",
+  "state": "SUCCEEDED",
+  "total_row_count": 1,
+  "data_array": [["1", "…"]],
+  "demo": false,
+  "FORMULAETL_DEMO": 0,
+  "note": "Statement Execution API SELECT 1; Free Edition Serverless Starter Warehouse; PAT not stored in repo"
+}

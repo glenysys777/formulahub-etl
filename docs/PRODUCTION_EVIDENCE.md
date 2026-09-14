@@ -52,8 +52,9 @@ Fill status: `PROVEN` | `UNPROVEN` | `FAILED` | `EMPTY`
 | C4 | Live Postgres load in wedge | UNPROVEN | `LIVE_DEST=postgres` + `LIVE_POSTGRES_*` | Not run | — | — |
 | C5 | Live Snowflake load in wedge | UNPROVEN | `LIVE_DEST=snowflake` + `LIVE_SNOWFLAKE_*` | Not run | — | — |
 | C6 | Full live wedge E2E (source→archive) | UNPROVEN | `docs/design-partner/LIVE_WEDGE.md` | **Do not mark PROVEN** until a real run’s JSON (redacted) is pasted here with SHA + date. **Do not fake LIVE PROVEN.** | — | — |
+| C7 | Databricks Free Edition SQL smoke (`SELECT 1` via Statement Execution API) | **PROVEN Soft-PASS LIVE_EXTERNAL SQL only** | Founder Free Edition workspace + Serverless Starter Warehouse; `FORMULAETL_DEMO=0`; PAT **not** stored in repo | Redacted: [`docs/evidence/databricks_sql_smoke_redacted.json`](./evidence/databricks_sql_smoke_redacted.json) (`host`/`warehouse_id`/`SUCCEEDED`/`total_row_count=1`). **Does not** prove Databricks Jobs. After merge onto `main`, record merge SHA here. | this PR — **replace with merge SHA on main** | 2026-09-14 |
 
-CI never sets `RUN_LIVE_WEDGE`. Green Actions ≠ LIVE_CLOUD PROVEN.
+CI never sets `RUN_LIVE_WEDGE`. Green Actions ≠ LIVE_CLOUD PROVEN. C7 is manual founder evidence outside CI.
 
 ---
 
@@ -177,14 +178,15 @@ Reconciliation: **N=12 = R=2 + D=2 + L=8**.
 | K1 | DEMO reconcile always-on | PROVEN **LOCAL/DEMO** | `python3 scripts/customer001_local_wedge.py --mode demo` + pytest integration | N=R+D+L | 2026-09-14 |
 | K2 | Real local Postgres INSERT → `formulahub_wedge.customers_wedge` | PROVEN **LOCAL_PROVEN** when DSN up; else skip **LOCAL_ONLY** | `FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN='host=localhost dbname=formulahub_wedge'` + Mac `START-POSTGRES.command` (LC_ALL=en_US.UTF-8) | Not LIVE_EXTERNAL; trust/local socket OK | 2026-09-14 |
 | K3 | Adapted demos (s3-pgp / core-path / lookup) → local PG | PROVEN **LOCAL_PROVEN** when PG up | `demos/*/pipeline.local-postgres.json` | Files + customers_wedge; cloud dest UNPROVEN | 2026-09-14 |
-| K4 | Snowflake bulk / Databricks / external SFTP·S3 | **GAP / UNPROVEN** | — | Document only — do not claim LIVE | 2026-09-14 |
+| K4 | Snowflake bulk / Databricks Jobs / external SFTP·S3 | **GAP / UNPROVEN** | — | Document only — do not claim LIVE. Databricks **SQL** Soft-PASS is §C C7 (not this LOCAL wedge). | 2026-09-14 |
 
 ---
 
 ## Notes
 
-- Phase Perf adds streaming/lazy-chain + LOCAL/DEMO scale evidence; live connector E2E (section C / H) remains **UNPROVEN** until partner credentials exist.
-- Customer001 LOCAL wedge (§K) proves filesystem + optional local Postgres only — **not** LIVE_EXTERNAL.
+- Phase Perf adds streaming/lazy-chain + LOCAL/DEMO scale evidence; live wedge E2E (C1–C6) remains **UNPROVEN** until partner credentials exist.
+- §C **C7**: Databricks Free Edition SQL smoke Soft-PASS (SQL only; Jobs UNPROVEN).
+- Customer001 LOCAL wedge (§K) proves filesystem + optional local Postgres only — **not** LIVE_EXTERNAL wedge.
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
 - Pytest **count** this PR (default markers): **190 passed**, 1 skipped, 6 deselected (`live` + `bench`). Includes Customer001 LOCAL wedge tests.
