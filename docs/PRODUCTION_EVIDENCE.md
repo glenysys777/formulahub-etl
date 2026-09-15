@@ -193,4 +193,4 @@ Reconciliation: **N=12 = R=2 + D=2 + L=8**.
 - §K **K5**: Lookup Join heavy-file + dynamic Job Context Soft-PASS (LOCAL/DEMO only).
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
-- Pytest **count** this PR (default markers): re-measure after merge; Soft-PASS bench gated by `RUN_BENCH=1`.
+- Pytest **count** this PR (default markers): **205 passed**, 2 skipped, 7 deselected (`live` + `bench`). Includes Lookup Join Soft-PASS smoke + Job Context path tests.
