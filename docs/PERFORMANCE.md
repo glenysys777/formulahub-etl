@@ -40,7 +40,7 @@ Peak RSS is measured in a **child process** so fixture encrypt / prior scales do
 ## What is still DEMO / not claimed
 
 - Mock S3 under `data/s3`, demo Snowflake **CSV** under `data/out`. **Not** live cloud.
-- `keep=last` dedupe, sort, aggregate, lookup join still materialize.
+- `keep=last` dedupe, sort, aggregate, lookup join still materialize. Lookup Join Soft-PASS (100k / optional 1M) is documented in `docs/evidence/lookup_join_stress_softpass_redacted.json` — RSS grows with both sides in RAM (`make bench-lookup-join`).
 - Live Snowflake still `executemany` (not COPY).
 - PGP via `gpg` is real crypto on demo keys — not a partner key-management story.
 - 10M peak RSS is dominated by the **dedupe key set**, not a second full row copy. It completes; it is not a 400 MB job.

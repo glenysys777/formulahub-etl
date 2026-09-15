@@ -1,0 +1,119 @@
+{
+  "classification": "LOCAL/DEMO Soft-PASS",
+  "evidence": "PROVEN Soft-PASS LOCAL/DEMO",
+  "status": "success",
+  "scale_left": 100000,
+  "scale_lookup": 5000,
+  "active_context": "QA",
+  "elapsed_s": 0.51,
+  "peak_rss_mb": 158.7,
+  "rows_left_in": 100000,
+  "rows_lookup_in": 5000,
+  "rows_join_out": 100000,
+  "rows_dest_out": 100000,
+  "bytes_left": 3050049,
+  "bytes_lookup": 85860,
+  "join_how": "left",
+  "join_match": "first",
+  "join_key_resolved": "customer_id",
+  "orders_path_resolved": "data/stress/lookup_join/qa/orders.csv",
+  "lookup_path_resolved": "data/stress/lookup_join/qa/customers.csv",
+  "out_path_resolved": "data/out/lookup_join_stress/qa/joined.csv",
+  "contexts_switched": [
+    "QA"
+  ],
+  "node_metrics": {
+    "customers": {
+      "rows_in": 0,
+      "rows_out": 5000,
+      "rows_rejected": 0,
+      "duration_ms": 4.56,
+      "feed": "none",
+      "component_type": "local_file_source"
+    },
+    "orders": {
+      "rows_in": 0,
+      "rows_out": 100000,
+      "rows_rejected": 0,
+      "duration_ms": 111.8,
+      "feed": "none",
+      "component_type": "local_file_source"
+    },
+    "join": {
+      "rows_in": 100000,
+      "rows_out": 100000,
+      "rows_rejected": 0,
+      "duration_ms": 127.56,
+      "feed": "materialized_rows",
+      "component_type": "lookup_join"
+    },
+    "map": {
+      "rows_in": 100000,
+      "rows_out": 100000,
+      "rows_rejected": 0,
+      "duration_ms": 230.07,
+      "feed": "batches",
+      "lazy": true,
+      "pending": true,
+      "component_type": "column_map",
+      "batches": 4
+    },
+    "dest": {
+      "rows_in": 100000,
+      "rows_out": 100000,
+      "rows_rejected": 0,
+      "duration_ms": 237.52,
+      "feed": "batches",
+      "batches": 4,
+      "component_type": "local_file_destination"
+    }
+  },
+  "notes": [
+    "Lookup Join is BLOCKING_ROWS (in-memory hash); Soft-PASS documents RSS, not a streaming join claim.",
+    "Generated left\u2248100000 rows, lookup\u22485000 rows under data/stress/lookup_join/<context>/."
+  ],
+  "error": null,
+  "sha_hint": "this PR \u2014 replace with merge SHA on main",
+  "date": "2026-09-15",
+  "note": "LOCAL/DEMO Soft-PASS only. Lookup Join materializes left+lookup in RAM. Not LIVE_EXTERNAL. PAT/creds N/A. Job Context ${\u2026} substitution proven for orders_path / lookup_path / out_path / join_key across DEV|QA|PROD.",
+  "context_switch": {
+    "ok": true,
+    "contexts": {
+      "DEV": {
+        "status": "success",
+        "out_path": "data/out/lookup_join_stress/dev/joined.csv",
+        "out_exists": true,
+        "rows_join_out": 500
+      },
+      "QA": {
+        "status": "success",
+        "out_path": "data/out/lookup_join_stress/qa/joined.csv",
+        "out_exists": true,
+        "rows_join_out": 500
+      },
+      "PROD": {
+        "status": "success",
+        "out_path": "data/out/lookup_join_stress/prod/joined.csv",
+        "out_exists": true,
+        "rows_join_out": 500
+      }
+    }
+  },
+  "optional_1m_probe": {
+    "scale_left": 1000000,
+    "scale_lookup": 10000,
+    "elapsed_s": 5.763,
+    "peak_rss_mb": 930.38,
+    "rows_join_out": 1000000,
+    "status": "success",
+    "note": "Optional probe (not CI Soft-PASS gate). Completes; RSS ~0.9 GiB \u2014 join still materializes. Prefer 100k Soft-PASS for partner laptop claims."
+  },
+  "softpass_gate": {
+    "scale_left": 100000,
+    "scale_lookup": 5000,
+    "file_size_orders_bytes": 3050049,
+    "file_size_lookup_bytes": 85860,
+    "approx_orders_mb": 2.91,
+    "command": "RUN_BENCH=1 FORMULAETL_DEMO=1 python3 scripts/lookup_join_stress.py --scale 100000 --lookup-scale 5000 --context QA --require-run-bench --prove-contexts"
+  }
+}
