@@ -1,4 +1,4 @@
-.PHONY: install seed test test-fast bench bench-pytest bench-10m demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql demo-customer001 customer001-wedge customer001-wedge-pg customer001-fail-injects demo-local-postgres api worker web build docker-up docker-down lint desktop desktop-install desktop-lint dist-mac mac-pack
+.PHONY: install seed test test-fast bench bench-pytest bench-10m bench-lookup-join demo demo-api demo-excel demo-sftp demo-db demo-core-path demo-python-row demo-kafka demo-s3-databricks demo-databricks-sql demo-lookup-join demo-lookup-join-contexts demo-customer001 customer001-wedge customer001-wedge-pg customer001-fail-injects demo-local-postgres api worker web build docker-up docker-down lint desktop desktop-install desktop-lint dist-mac mac-pack
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export FORMULAETL_DEMO ?= 1
@@ -38,6 +38,13 @@ bench-10m: seed
 		--scales 10000000 --timebox-s 3600 \
 		--source s3 --dest snowflake \
 		--out data/out/bench/local_wedge_10m.json
+
+# Lookup Join Soft-PASS (100k left / 5k lookup + Job Context switch). LOCAL/DEMO only.
+bench-lookup-join: seed
+	RUN_BENCH=1 FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 scripts/lookup_join_stress.py --require-run-bench \
+		--scale 100000 --lookup-scale 5000 --context QA --prove-contexts \
+		--out data/out/bench/lookup_join_stress_results.json
 
 demo: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
@@ -83,6 +90,11 @@ demo-databricks-sql: seed
 demo-lookup-join: seed
 	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
 		python3 -m formulaetl.cli run demos/lookup-join-mapper/pipeline.json
+
+# Lookup Join + Job Contexts smoke (generates small CSVs, proves DEV/QA/PROD paths).
+demo-lookup-join-contexts: seed
+	FORMULAETL_DEMO=1 FORMULAETL_WORK_DIR=$(ROOT) \
+		python3 scripts/lookup_join_stress.py --scale 1000 --context DEV --prove-contexts
 
 # Customer001 LOCAL wedge (filesystem; DEMO postgres mirror). Never LIVE_EXTERNAL.
 demo-customer001: seed

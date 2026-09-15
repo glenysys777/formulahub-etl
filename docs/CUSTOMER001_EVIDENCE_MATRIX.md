@@ -1,6 +1,6 @@
 # CUSTOMER_001 — Production evidence matrix (PROVE+SELL)
 
-**Audited tip:** `c9c66e1` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; SQL Soft-PASS `9f8fc2b` / #24; Jobs Soft-PASS this PR)  
+**Audited tip:** `c9c66e1` (`origin/main`, 2026-09-14; Desktop ALPHA `cc04ebc` / #20; LOCAL wedge `e38605d` / #22; SQL Soft-PASS `9f8fc2b` / #24; Jobs Soft-PASS; Lookup Join + Job Context Soft-PASS this PR)  
 **Mission:** Honest production-evidence for design-partner sell. **Never claim LIVE proven from `FORMULAETL_DEMO=1`.**  
 **Sources:** code under `packages/runner`, `packages/api`, demos, `tests/`, and prior audits (`PRODUCTION_READINESS.md`, `PRODUCTION_EVIDENCE.md`, `CURRENT_STATE_MATRIX.md`). Sales copy is **not** evidence.
 
@@ -52,7 +52,7 @@ Harness: `docs/design-partner/LIVE_WEDGE.md`. CI: `pytest -m "not live and not b
 | **Rejects fan-out** | ALPHA (JSONL spill) | **YES** (demo 3 rejects) | **YES** | N/A | **Yes** for DEMO/partner laptop | Need retention/ops story for prod volumes |
 | **Column map / Schema Map** | ALPHA | **YES** | **YES** | N/A | **Yes** | Rename-only; not a full MDM layer |
 | **Field Mapper (`tmap`)** | ALPHA (AST exprs + Studio UI) | **YES** | **YES** | N/A | **Yes** for scoped maps | AST subset; failures → null + log |
-| **Lookup Join** | ALPHA (in-memory hash) | **YES** (demo) | **YES** (small N) | N/A | **Partial** — fine for thousands | Millions → RAM; materializes |
+| **Lookup Join** | ALPHA (in-memory hash) | **YES** (demo) | **YES Soft-PASS** (100k left / 5k lookup; optional 1M probe) | N/A | **Partial** — Soft-PASS at 100k; not unbounded | Materializes both sides; Soft-PASS [`evidence/lookup_join_stress_softpass_redacted.json`](./evidence/lookup_join_stress_softpass_redacted.json) (~159 MB RSS @ 100k; ~930 MB @ 1M probe) |
 | **Dedupe** | ALPHA | **YES** | **YES** (`keep=first` streams; `keep=last` materializes) | N/A | **Partial** | Key-set RSS dominates at 10M LOCAL/DEMO |
 | **Postgres source/dest** | DEMO CI / ALPHA live (`psycopg`) | **YES** (SQLite/CSV fallback) | **YES** (DEMO) | **NO** | **No** until LIVE DSN proof | SQL-as-config; live untested in CI |
 | **Snowflake destination** | DEMO (CSV + `.load.json`) / weak live (`executemany`) | **YES** (sidecar) | **YES** (streaming demo sink to 1M+) | **NO** | **No** as “warehouse product” | **Do not sell high-volume Snowflake** until staging+COPY proven — see `docs/snowflake/BULK_LOAD.md` |
@@ -66,7 +66,7 @@ Harness: `docs/design-partner/LIVE_WEDGE.md`. CI: `pytest -m "not live and not b
 | **Logging / run events** | ALPHA (SQLite events + node_runs + CLI emit) | **YES** | **YES** | N/A | **Yes** for partner triage | No retention SLO / SIEM export |
 | **Large files / memory bound** | ALPHA LOCAL/DEMO streaming | **YES** | **YES** (1M ≤~306 MB RSS; 10M completes) | **NO** live throughput | **Partial** — claim LOCAL/DEMO only | Sort/join/`keep=last` still materialize; live Snowflake materializes then `executemany` |
 | **AI Pipeline Builder** | DEMO (heuristic + optional LLM) | **YES** | **YES** | N/A | **Demo only** — review before any live data | Auto-saves; do not auto-run unreviewed graphs on prod |
-| **Job Contexts `${…}`** | ALPHA | **YES** | **YES** | N/A | **Yes** for non-secret params | Not a secrets vault |
+| **Job Contexts `${…}`** | ALPHA | **YES** | **YES Soft-PASS** (DEV/QA/PROD path + join key on Lookup Join stress) | N/A | **Yes** for non-secret params | Not a secrets vault; Soft-PASS with Lookup Join evidence above + Studio Job Contexts rail |
 | **Pipeline validate** | ALPHA (structural) | **YES** | **YES** | **NO** (not live connectivity) | **Yes** as preflight | Does not prove cloud reachability |
 | **Studio (canvas / Save / Git mirror)** | ALPHA | **YES** | **YES** (build + UX) | N/A | **Yes** as designer | Vercel UI ≠ runner; API must be local/Docker |
 | **Desktop shell** (Studio.app / Electron Mac pack) | **ALPHA** (shipped `cc04ebc` / #20) | **YES** (local launcher path) | **Partial** (DEMO/LOCAL unzip → double-click / `make desktop`; Linux CI smoke only — no signed Mac `.dmg` claim) | **NO** | **Partial** — DEMO/LOCAL Studio launch only | Not a substitute for LIVE_EXTERNAL wedge proof; unsigned Gatekeeper friction; no cloud auth in this wave — see `studio/DESKTOP_SHELL.md` |
@@ -126,6 +126,7 @@ LIVE Databricks Soft-PASS (Free Edition, `FORMULAETL_DEMO=0`, 2026-09-14): **SQL
 | L7–L12 | Fail injects (bad PGP, missing file, bad CSV, schema drift, dest down, retry) | LOCAL_ONLY | PROVEN | `scripts/customer001_fail_injections/` | Expect fail / retry OK |
 | L13 | Adapted demos → local PG | LOCAL_PROVEN | PROVEN* | `demos/*/pipeline.local-postgres.json` (s3-pgp-snowflake, core-path, lookup-join-mapper) | Local files + `customers_wedge`; S3/Snowflake remain LIVE **UNPROVEN** |
 | L14 | Mac pack `START-POSTGRES.command` | LOCAL_ONLY | PROVEN | `scripts/START-POSTGRES.command` → FormulaHub-ETL-Mac pack | Locale fix + DDL |
+| L15 | Heavy-file Lookup Join + dynamic Job Context `${…}` | LOCAL/DEMO Soft-PASS | **Soft-PASS** | `scripts/lookup_join_stress.py` → [`evidence/lookup_join_stress_softpass_redacted.json`](./evidence/lookup_join_stress_softpass_redacted.json); demo `demos/lookup-join-contexts/`; founder note [`demo/LOOKUP_JOIN_STRESS.md`](./demo/LOOKUP_JOIN_STRESS.md) | 100k left / 5k lookup (~3 MB + ~84 KB CSV); peak RSS ~159 MB; DEV/QA/PROD path substitution. Join still materializes. Optional 1M probe (~930 MB RSS). **Not** LIVE_EXTERNAL. |
 
 **Expected counts:** `N=12 = R=2 + D=2 + L=8`.
 
@@ -140,4 +141,4 @@ python3 scripts/customer001_local_wedge.py --mode postgres
 
 **Do not** use L* rows to mark C1–C6 or LIVE Kafka as proven. (Databricks SQL/Jobs Soft-PASS is separate founder evidence, not L*.)
 
-Docs: [`CUSTOMER001_LOCAL_WEDGE.md`](./CUSTOMER001_LOCAL_WEDGE.md) · Harness: `scripts/customer001_local_wedge.py`
+Docs: [`CUSTOMER001_LOCAL_WEDGE.md`](./CUSTOMER001_LOCAL_WEDGE.md) · Harness: `scripts/customer001_local_wedge.py` · Lookup Join Soft-PASS: `scripts/lookup_join_stress.py` / [`demo/LOOKUP_JOIN_STRESS.md`](./demo/LOOKUP_JOIN_STRESS.md)

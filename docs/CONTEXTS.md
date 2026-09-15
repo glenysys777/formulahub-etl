@@ -64,6 +64,15 @@ See [architecture/MASTER_CHILD_PIPELINES.md](./architecture/MASTER_CHILD_PIPELIN
 FORMULAETL_CONTEXT=QA FORMULAETL_DEMO=1 python -m formulaetl.cli run demos/api-databricks-sql/pipeline.json
 ```
 
+File-path / join-key Soft-PASS (Lookup Join stress):
+
+```bash
+FORMULAETL_DEMO=1 python3 scripts/lookup_join_stress.py --scale 1000 --context DEV --prove-contexts
+# Studio: open demos/lookup-join-contexts/pipeline.json → Job Contexts rail
+```
+
+See [`demo/LOOKUP_JOIN_STRESS.md`](./demo/LOOKUP_JOIN_STRESS.md).
+
 ## Databricks SQL (clean path)
 
 1. Drop **Databricks SQL** (`databricks_sql`).

@@ -180,6 +180,7 @@ Reconciliation: **N=12 = R=2 + D=2 + L=8**.
 | K2 | Real local Postgres INSERT → `formulahub_wedge.customers_wedge` | PROVEN **LOCAL_PROVEN** when DSN up; else skip **LOCAL_ONLY** | `FORMULAETL_DEMO=0 LOCAL_POSTGRES_DSN='host=localhost dbname=formulahub_wedge'` + Mac `START-POSTGRES.command` (LC_ALL=en_US.UTF-8) | Not LIVE_EXTERNAL; trust/local socket OK | 2026-09-14 |
 | K3 | Adapted demos (s3-pgp / core-path / lookup) → local PG | PROVEN **LOCAL_PROVEN** when PG up | `demos/*/pipeline.local-postgres.json` | Files + customers_wedge; cloud dest UNPROVEN | 2026-09-14 |
 | K4 | Snowflake bulk / external SFTP·S3 | **GAP / UNPROVEN** | — | Document only — do not claim LIVE. Databricks **SQL**/Jobs Soft-PASS are §C C7/C8 (not this LOCAL wedge). | 2026-09-14 |
+| K5 | Heavy-file Lookup Join + Job Context `${…}` Soft-PASS | **PROVEN Soft-PASS LOCAL/DEMO** | `RUN_BENCH=1 python3 scripts/lookup_join_stress.py --scale 100000 --lookup-scale 5000 --context QA --require-run-bench --prove-contexts` | Redacted: [`docs/evidence/lookup_join_stress_softpass_redacted.json`](./evidence/lookup_join_stress_softpass_redacted.json) (100k left / 5k lookup; ~159 MB RSS; DEV/QA/PROD path switch). Optional 1M probe ~930 MB. Join materializes. Not LIVE. | this PR — **replace with merge SHA on main** | 2026-09-15 |
 
 ---
 
@@ -189,6 +190,7 @@ Reconciliation: **N=12 = R=2 + D=2 + L=8**.
 - §C **C7**: Databricks Free Edition SQL smoke Soft-PASS (SQL only).
 - §C **C8**: Databricks Free Edition Jobs smoke Soft-PASS (Jobs API via FormulaETL only; not Spark-inside-FormulaETL / full wedge).
 - Customer001 LOCAL wedge (§K) proves filesystem + optional local Postgres only — **not** LIVE_EXTERNAL wedge.
+- §K **K5**: Lookup Join heavy-file + dynamic Job Context Soft-PASS (LOCAL/DEMO only).
 - Readiness: validate + CI move **trust/ops** toward design-partner; live connectors stay DEMO until external evidence.
 - See `docs/design-partner/` for operational pack.
-- Pytest **count** this PR (default markers): **190 passed**, 1 skipped, 6 deselected (`live` + `bench`). Includes Customer001 LOCAL wedge tests.
+- Pytest **count** this PR (default markers): re-measure after merge; Soft-PASS bench gated by `RUN_BENCH=1`.
