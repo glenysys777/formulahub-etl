@@ -108,6 +108,7 @@
   "metadata": {
     "demo": true,
     "requires_demo_mode": true,
-    "use_case": "api-map-transform"
+    "use_case": "api-map-transform",
+    "workspace_folder": "Pipelines/Demos"
   }
 }

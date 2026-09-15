@@ -154,6 +154,7 @@
   ],
   "metadata": {
     "demo": true,
-    "requires_demo_mode": true
+    "requires_demo_mode": true,
+    "workspace_folder": "Pipelines/Demos"
   }
 }

@@ -28,6 +28,8 @@ Local-path Studio shell: **one clickable icon**, local runner, visible workspace
 ```
 
 - Shell **spawns** `uvicorn formulaetl_api.main:app` on `127.0.0.1:18765` when `/health` is down; otherwise **reuses** an existing API.
+- Studio UI is the built web app (`apps/web/dist`) with the same **Workspace** folder tree as browser Studio (`docs/studio/WORKSPACE.md`).
+- Status bar shows the active `FORMULAETL_WORK_DIR` / workspace path on disk.
 - Serves built Studio (`apps/web/dist`) on `127.0.0.1:18766` inside the app (Vite OK in `--dev`).
 - **Studio → Open in Browser** opens the same URL in a browser (optional, not primary).
 - **Studio → Restart API** respawns the owned API; if the API dies, the shell **auto-restarts once** and shows a reconnect screen.

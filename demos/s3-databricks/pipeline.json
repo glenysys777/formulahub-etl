@@ -40,6 +40,7 @@
   "metadata": {
     "demo": true,
     "requires_demo_mode": true,
-    "use_case": "s3-databricks"
+    "use_case": "s3-databricks",
+    "workspace_folder": "Pipelines/Demos"
   }
 }

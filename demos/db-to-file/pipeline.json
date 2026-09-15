@@ -46,6 +46,7 @@
     "demo": true,
     "requires_demo_mode": true,
     "use_case": "db-to-file",
+    "workspace_folder": "Pipelines/Demos",
     "honesty": "Demo uses SQLite under the hood; real Postgres needs DSN/credentials and FORMULAETL_DEMO=0"
   }
 }

@@ -73,6 +73,7 @@
   "metadata": {
     "demo": true,
     "requires_demo_mode": true,
-    "use_case": "kafka-databricks"
+    "use_case": "kafka-databricks",
+    "workspace_folder": "Pipelines/Demos"
   }
 }

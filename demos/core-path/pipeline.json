@@ -132,6 +132,7 @@
   "metadata": {
     "demo": true,
     "requires_demo_mode": true,
-    "use_case": "core-path"
+    "use_case": "core-path",
+    "workspace_folder": "Pipelines/Demos"
   }
 }

@@ -33,11 +33,17 @@ import { QuickAddPalette } from "./QuickAddPalette";
 import { StudioNodeActionsContext, type StudioNodeActions } from "./studioActions";
 import { JobContextsPanel } from "./JobContextsPanel";
 import { parseContexts } from "./vars";
+import {
+  DEFAULT_MY_PIPELINES,
+  WorkspacePanel,
+  type WorkspaceState,
+} from "./WorkspacePanel";
 
 const DEMO_ID = "demo-api-kafka-databricks";
 const DEFAULT_PROMPT =
   "Read orders from a Kafka topic, map fields, and trigger a Databricks notebook job.";
 const SIDEBAR_COLLAPSE_KEY = "formulaetl.studio.sidebarCollapsed";
+const WORKSPACE_FOCUS_KEY = "formulaetl.studio.workspaceFocus";
 
 const PALETTE_ORDER = [
   "kafka_source",
@@ -293,6 +299,10 @@ function AppCanvas() {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddQuery, setQuickAddQuery] = useState("");
   const [canvasFocused, setCanvasFocused] = useState(false);
+  const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
+  const [workspacePipelines, setWorkspacePipelines] = useState<Pipeline[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string>(DEFAULT_MY_PIPELINES);
+  const workspacePanelRef = useRef<HTMLDivElement | null>(null);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -375,6 +385,11 @@ function AppCanvas() {
       setRun(null);
       const hasContexts = Object.keys(parseContexts(p.metadata).sets).length > 0;
       setRailOpen((r) => ({ ...r, contexts: hasContexts }));
+      const folder =
+        typeof p.metadata?.workspace_folder === "string" && p.metadata.workspace_folder.trim()
+          ? String(p.metadata.workspace_folder).trim()
+          : null;
+      if (folder) setSelectedFolder(folder);
       try {
         const sched = await api.getSchedule(p.id);
         setScheduleEnabled(Boolean(sched.enabled));
@@ -393,6 +408,78 @@ function AppCanvas() {
       }
     },
     [setNodes, setEdges],
+  );
+
+  const refreshWorkspace = useCallback(async () => {
+    try {
+      const [ws, list] = await Promise.all([api.getWorkspace(), api.listPipelines()]);
+      setWorkspace(ws);
+      setWorkspacePipelines(list);
+    } catch {
+      /* non-fatal — tree refreshes on next open/create */
+    }
+  }, []);
+
+  const openFromWorkspace = useCallback(
+    async (pipelineId: string) => {
+      setError(null);
+      setBusy(true);
+      try {
+        const p = await api.getPipeline(pipelineId);
+        await loadPipeline(p);
+        setMapperOpen(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadPipeline],
+  );
+
+  const focusWorkspacePanel = useCallback(() => {
+    try {
+      sessionStorage.setItem(WORKSPACE_FOCUS_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    const wrap = workspacePanelRef.current;
+    const el =
+      (wrap?.querySelector(".workspace-panel") as HTMLElement | null) ||
+      (document.querySelector('[data-testid="workspace-panel"]') as HTMLElement | null);
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    el?.classList.add("workspace-flash");
+    window.setTimeout(() => el?.classList.remove("workspace-flash"), 1200);
+  }, []);
+
+  const moveWorkspacePipeline = useCallback(
+    async (pipelineId: string, folder: string) => {
+      setError(null);
+      try {
+        const res = await api.movePipelineFolder(pipelineId, folder);
+        setWorkspace(res.workspace);
+        setWorkspacePipelines((prev) =>
+          prev.map((p) => (p.id === pipelineId ? { ...p, ...res.pipeline } : p)),
+        );
+        if (pipelineRef.current?.id === pipelineId) {
+          setPipeline((cur) =>
+            cur
+              ? {
+                  ...cur,
+                  metadata: {
+                    ...(cur.metadata || {}),
+                    ...(res.pipeline.metadata || {}),
+                  },
+                }
+              : cur,
+          );
+        }
+        setSelectedFolder(folder);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [],
   );
 
   /** Sync canvas run visuals when busy/run changes without wiping selection. */
@@ -482,6 +569,7 @@ function AppCanvas() {
         } catch {
           /* non-fatal */
         }
+        await refreshWorkspace();
         return loadDemo();
       })
       .catch(() => {
@@ -489,7 +577,7 @@ function AppCanvas() {
         setHealth(null);
         setError(`API unreachable at ${API_BASE}. Start with: make api`);
       });
-  }, [loadDemo]);
+  }, [loadDemo, refreshWorkspace]);
 
   useEffect(() => {
     if (!fileMenuOpen) return;
@@ -660,36 +748,40 @@ function AppCanvas() {
 
   const ensurePipeline = useCallback(async (): Promise<Pipeline> => {
     if (pipelineRef.current) return pipelineRef.current;
+    const folder = selectedFolder || DEFAULT_MY_PIPELINES;
     const created = await api.createPipeline({
       name: "Untitled pipeline",
       description: "Built from the component palette (non-AI path)",
       nodes: [],
       edges: [],
-      metadata: { created_via: "palette" },
+      metadata: { created_via: "palette", workspace_folder: folder },
     });
     await loadPipeline(created);
+    void refreshWorkspace();
     return created;
-  }, [loadPipeline]);
+  }, [loadPipeline, refreshWorkspace, selectedFolder]);
 
   const newBlankPipeline = useCallback(async () => {
     setError(null);
     setBusy(true);
     try {
+      const folder = selectedFolder || DEFAULT_MY_PIPELINES;
       const created = await api.createPipeline({
         name: "Untitled pipeline",
         description: "Blank canvas — drag components from the palette",
         nodes: [],
         edges: [],
-        metadata: { created_via: "blank" },
+        metadata: { created_via: "blank", workspace_folder: folder },
       });
       await loadPipeline(created);
       setMapperOpen(false);
+      await refreshWorkspace();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [loadPipeline]);
+  }, [loadPipeline, refreshWorkspace, selectedFolder]);
 
   const addComponentNode = useCallback(
     async (comp: ComponentInfo, position?: { x: number; y: number }) => {
@@ -837,7 +929,17 @@ function AppCanvas() {
     setError(null);
     try {
       const p = await api.aiBuild(prompt.trim());
-      await loadPipeline(p);
+      const folder = selectedFolder || DEFAULT_MY_PIPELINES;
+      const meta = { ...(p.metadata || {}), workspace_folder: folder };
+      const saved = await api.updatePipeline(p.id, {
+        name: p.name,
+        description: p.description,
+        nodes: p.nodes,
+        edges: p.edges,
+        metadata: meta,
+      });
+      await loadPipeline({ ...p, ...saved, metadata: meta });
+      await refreshWorkspace();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -988,6 +1090,15 @@ function AppCanvas() {
         p = await ensurePipeline();
       }
       const updated = fromFlow(p, nodesRef.current, edgesRef.current);
+      const folder =
+        (typeof updated.metadata?.workspace_folder === "string" &&
+          updated.metadata.workspace_folder.trim()) ||
+        selectedFolder ||
+        DEFAULT_MY_PIPELINES;
+      updated.metadata = {
+        ...(updated.metadata || {}),
+        workspace_folder: folder,
+      };
       const saved = await api.updatePipeline(p.id, updated);
       setPipeline({ ...updated, ...saved, nodes: updated.nodes, edges: updated.edges });
       const path =
@@ -995,6 +1106,7 @@ function AppCanvas() {
         (health?.work_dir ? `${health.work_dir}/pipelines/${p.id}.json` : `pipelines/${p.id}.json`);
       setSaveMsg(`Saved to ${path}`);
       window.setTimeout(() => setSaveMsg(null), 6000);
+      void refreshWorkspace();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1079,7 +1191,7 @@ function AppCanvas() {
             data-testid="new-blank"
             onClick={newBlankPipeline}
             disabled={busy}
-            title="Start an empty pipeline and add components from the palette"
+            title={`Create blank pipeline in ${selectedFolder || DEFAULT_MY_PIPELINES}`}
           >
             New blank
           </button>
@@ -1089,6 +1201,7 @@ function AppCanvas() {
             data-testid="load-demo"
             onClick={loadDemo}
             disabled={busy}
+            title="Open the default Kafka → Databricks demo"
           >
             Load demo
           </button>
@@ -1114,11 +1227,24 @@ function AppCanvas() {
             <summary
               className="btn"
               data-testid="file-menu"
-              title="Export or copy git commands"
+              title="Workspace, export, or copy git commands"
             >
               File
             </summary>
             <div className="file-menu-dropdown" role="menu" data-testid="file-menu-dropdown">
+              <button
+                type="button"
+                role="menuitem"
+                className="file-menu-item"
+                data-testid="open-from-workspace"
+                title="Focus the left Workspace tree"
+                onClick={() => {
+                  setFileMenuOpen(false);
+                  focusWorkspacePanel();
+                }}
+              >
+                Open from Workspace
+              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -1194,45 +1320,61 @@ function AppCanvas() {
       )}
 
       <div className={`main${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
-        <aside className="palette" data-testid="component-palette" aria-label="Component palette">
-          <h3>Components</h3>
-          <p className="palette-hint">
-            Drag, click, or type on the canvas to place. Primary non-AI build path.
-          </p>
-          <div className="palette-list">
-            {paletteGroups.map((group) => (
-              <div key={group.id} className="palette-group" data-testid={`palette-group-${group.id}`}>
-                <div className="palette-group-label">{group.label}</div>
-                {group.items.map((c) => {
-                  const cat = categoryForType(c.type);
-                  const label =
-                    c.type === "tmap" ? "Field Mapper" : c.display_name || c.type;
-                  return (
-                    <button
-                      key={c.type}
-                      type="button"
-                      className={`palette-item cat-${cat}`}
-                      title={`${c.type} — drag or click to add`}
-                      draggable={!busy}
-                      data-testid={`palette-item-${c.type}`}
-                      disabled={busy}
-                      onDragStart={(e) => onPaletteDragStart(e, c)}
-                      onClick={() => void addComponentNode(c)}
-                    >
-                      <span className="palette-icon">
-                        <ComponentGlyph type={c.type} size={15} />
-                      </span>
-                      <span className="palette-label">{label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-            {!paletteItems.length && (
-              <p className="empty-hint">Connect API to load palette from /api/components.</p>
-            )}
+        <div className="left-rail" data-testid="left-rail">
+          <div ref={workspacePanelRef}>
+            <WorkspacePanel
+              workspace={workspace}
+              pipelines={workspacePipelines}
+              activePipelineId={pipeline?.id || null}
+              selectedFolder={selectedFolder}
+              busy={busy}
+              onSelectFolder={setSelectedFolder}
+              onOpenPipeline={(id) => void openFromWorkspace(id)}
+              onNewPipeline={() => void newBlankPipeline()}
+              onMovePipeline={(id, folder) => void moveWorkspacePipeline(id, folder)}
+              onRefresh={() => void refreshWorkspace()}
+            />
           </div>
-        </aside>
+          <aside className="palette" data-testid="component-palette" aria-label="Component palette">
+            <h3>Components</h3>
+            <p className="palette-hint">
+              Drag, click, or type on the canvas to place. Primary non-AI build path.
+            </p>
+            <div className="palette-list">
+              {paletteGroups.map((group) => (
+                <div key={group.id} className="palette-group" data-testid={`palette-group-${group.id}`}>
+                  <div className="palette-group-label">{group.label}</div>
+                  {group.items.map((c) => {
+                    const cat = categoryForType(c.type);
+                    const label =
+                      c.type === "tmap" ? "Field Mapper" : c.display_name || c.type;
+                    return (
+                      <button
+                        key={c.type}
+                        type="button"
+                        className={`palette-item cat-${cat}`}
+                        title={`${c.type} — drag or click to add`}
+                        draggable={!busy}
+                        data-testid={`palette-item-${c.type}`}
+                        disabled={busy}
+                        onDragStart={(e) => onPaletteDragStart(e, c)}
+                        onClick={() => void addComponentNode(c)}
+                      >
+                        <span className="palette-icon">
+                          <ComponentGlyph type={c.type} size={15} />
+                        </span>
+                        <span className="palette-label">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+              {!paletteItems.length && (
+                <p className="empty-hint">Connect API to load palette from /api/components.</p>
+              )}
+            </div>
+          </aside>
+        </div>
         <div className={`canvas-wrap${busy ? " is-running" : ""}${!busy && run?.status === "success" ? " run-success" : ""}${!busy && run?.status === "failed" ? " run-failed" : ""}`}>
           <div className="ai-bar">
             <textarea
