@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_FOLDERS: list[str] = [
-    "Pipelines/Demos",
     "Pipelines/My pipelines",
+    "Pipelines/Demos",
     "Masters",
     "Reusable",
 ]

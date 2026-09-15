@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Pipeline } from "./api";
 
 export const DEFAULT_WORKSPACE_FOLDERS = [
-  "Pipelines/Demos",
   "Pipelines/My pipelines",
+  "Pipelines/Demos",
   "Masters",
   "Reusable",
 ] as const;
@@ -61,17 +61,38 @@ function buildTree(
   }
 
   for (const p of pipelines) {
-    const folder = folderForPipeline(p, pipelineFolders);
-    ensure(folder).pipelines.push(p);
+    ensure(folderForPipeline(p, pipelineFolders)).pipelines.push(p);
   }
 
+  const folderRank = (name: string) => {
+    if (name === "My pipelines") return 0;
+    if (name === "Demos") return 1;
+    return 2;
+  };
+
   const sortNode = (n: TreeNode) => {
-    n.children.sort((a, b) => a.name.localeCompare(b.name));
+    n.children.sort((a, b) => {
+      const ra = folderRank(a.name);
+      const rb = folderRank(b.name);
+      if (ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name);
+    });
     n.pipelines.sort((a, b) => a.name.localeCompare(b.name));
     n.children.forEach(sortNode);
   };
   sortNode(root);
   return root;
+}
+
+function pathContains(parent: string, child: string): boolean {
+  if (!parent) return true;
+  return child === parent || child.startsWith(`${parent}/`);
+}
+
+function branchHasActive(node: TreeNode, activeId: string | null): boolean {
+  if (!activeId) return false;
+  if (node.pipelines.some((p) => p.id === activeId)) return true;
+  return node.children.some((c) => branchHasActive(c, activeId));
 }
 
 type Props = {
@@ -108,36 +129,52 @@ function FolderBranch({
   onOpenPipeline: (id: string) => void;
   onMovePipeline?: (pipelineId: string, folder: string) => void;
 }) {
-  const [open, setOpen] = useState(depth < 2);
-  const isSelected = selectedFolder === node.path;
-  const displayName =
-    node.name === "Reusable" ? "Reusable" : node.name;
+  const shouldReveal =
+    depth < 1 ||
+    pathContains(node.path, selectedFolder) ||
+    branchHasActive(node, activePipelineId);
+
+  const [open, setOpen] = useState(shouldReveal);
+
+  useEffect(() => {
+    if (shouldReveal) setOpen(true);
+  }, [shouldReveal]);
 
   return (
     <div className="ws-branch" style={{ ["--ws-depth" as string]: depth }}>
       {node.path !== "" && (
-        <button
-          type="button"
-          className={`ws-folder${isSelected ? " is-selected" : ""}`}
+        <div
+          className={`ws-folder${selectedFolder === node.path ? " is-selected" : ""}`}
           data-testid={`workspace-folder-${node.path}`}
-          aria-expanded={open}
-          disabled={busy}
-          onClick={() => {
-            setOpen((v) => !v);
-            onSelectFolder(node.path);
-          }}
-          title={node.path}
         >
-          <span className="ws-chevron" aria-hidden>
+          <button
+            type="button"
+            className="ws-chevron-btn"
+            aria-label={open ? "Collapse folder" : "Expand folder"}
+            aria-expanded={open}
+            disabled={busy}
+            onClick={() => setOpen((v) => !v)}
+          >
             {open ? "▾" : "▸"}
-          </span>
-          <span className="ws-folder-label">
-            {displayName}
-            {node.name === "Reusable" ? (
-              <span className="ws-folder-hint"> · Child pipelines</span>
-            ) : null}
-          </span>
-        </button>
+          </button>
+          <button
+            type="button"
+            className="ws-folder-main"
+            disabled={busy}
+            title={node.path}
+            onClick={() => {
+              onSelectFolder(node.path);
+              setOpen(true);
+            }}
+          >
+            <span className="ws-folder-label">
+              {node.name}
+              {node.name === "Reusable" ? (
+                <span className="ws-folder-hint"> · Child pipelines</span>
+              ) : null}
+            </span>
+          </button>
+        </div>
       )}
       {open && (
         <div className="ws-children">
@@ -164,6 +201,11 @@ function FolderBranch({
                 disabled={busy}
                 onClick={() => onOpenPipeline(p.id)}
                 title={`${p.name}\n${p.id}`}
+                ref={(el) => {
+                  if (el && activePipelineId === p.id) {
+                    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                  }
+                }}
               >
                 <span className="ws-pipeline-icon" aria-hidden>
                   ▢
