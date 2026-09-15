@@ -48,7 +48,7 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 - Desktop: double-click **FormulaHub Studio.app** → API + Studio window (browser is optional menu item)
 - **Job Contexts** (right rail): DEV/QA/PROD key–value editor + `run_date` / `job_name`; same metadata as Databricks Variables preview — see `docs/CONTEXTS.md`
 - **Live run counters Soft-PASS:** mid-run `node_runs` poll → canvas rows in/out badges + edge flow — see `HAVE_VS_MISSING_RUN_JSON.md`
-- **Write JSON / Schema from JSON Soft-PASS:** palette + `demos/api-json-write` — see `HAVE_VS_MISSING_RUN_JSON.md`
+- **Write JSON / Schema from JSON Soft-PASS:** palette + `demos/api-json-write` — see `HAVE_VS_MISSING_RUN_JSON.md` and `docs/sales/FOUNDER_WIN_2027.md`
 
 ## Explicitly not in this wave
 

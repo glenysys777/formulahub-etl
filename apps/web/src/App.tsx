@@ -35,6 +35,8 @@ import { JobContextsPanel } from "./JobContextsPanel";
 import { parseContexts } from "./vars";
 
 const DEMO_ID = "demo-api-kafka-databricks";
+/** Founder Soft-PASS: records moving + Write JSON (open via ?pipeline=demo-api-json-write). */
+const JSON_WRITE_DEMO_ID = "demo-api-json-write";
 const DEFAULT_PROMPT =
   "Read orders from a Kafka topic, map fields, and trigger a Databricks notebook job.";
 const SIDEBAR_COLLAPSE_KEY = "formulaetl.studio.sidebarCollapsed";
@@ -564,6 +566,28 @@ function AppCanvas() {
     }
   }, [loadPipeline]);
 
+  const loadPipelineById = useCallback(
+    async (pipelineId: string) => {
+      setError(null);
+      setBusy(true);
+      try {
+        const p = await api.getPipeline(pipelineId);
+        await loadPipeline(p);
+        setMapperOpen(false);
+        setInspectorFocus("inspector");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadPipeline],
+  );
+
+  const loadJsonWriteDemo = useCallback(async () => {
+    await loadPipelineById(JSON_WRITE_DEMO_ID);
+  }, [loadPipelineById]);
+
   useEffect(() => {
     api
       .health()
@@ -576,6 +600,11 @@ function AppCanvas() {
         } catch {
           /* non-fatal */
         }
+        const params = new URLSearchParams(window.location.search);
+        const requested = (params.get("pipeline") || "").trim();
+        if (requested) {
+          return loadPipelineById(requested);
+        }
         return loadDemo();
       })
       .catch(() => {
@@ -583,7 +612,7 @@ function AppCanvas() {
         setHealth(null);
         setError(`API unreachable at ${API_BASE}. Start with: make api`);
       });
-  }, [loadDemo]);
+  }, [loadDemo, loadPipelineById]);
 
   useEffect(() => {
     if (!fileMenuOpen) return;
@@ -1189,6 +1218,16 @@ function AppCanvas() {
             disabled={busy}
           >
             Load demo
+          </button>
+          <button
+            type="button"
+            className="btn"
+            data-testid="load-json-write-demo"
+            onClick={() => void loadJsonWriteDemo()}
+            disabled={busy}
+            title="Soft-PASS: live row counters + Schema from JSON + Write JSON"
+          >
+            JSON write demo
           </button>
           <button
             type="button"
