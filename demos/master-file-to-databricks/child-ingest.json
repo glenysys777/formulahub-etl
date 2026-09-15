@@ -1,0 +1,62 @@
+{
+  "id": "demo-master-child-ingest",
+  "name": "Child A — File ingest",
+  "description": "Child pipeline: local CSV → Schema Map → file. Publishes row metrics to the Master via Run Pipeline publish_as.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "src",
+      "type": "local_file_source",
+      "label": "Orders CSV",
+      "config": {
+        "path": "fixtures/sample/orders_17cols.csv",
+        "format": "csv"
+      },
+      "position": { "x": 40, "y": 160 }
+    },
+    {
+      "id": "map",
+      "type": "column_map",
+      "label": "Schema Map",
+      "config": {
+        "mappings": [
+          "order_id=order_id",
+          "customer_name=customer",
+          "unit_price=amount"
+        ]
+      },
+      "position": { "x": 300, "y": 160 }
+    },
+    {
+      "id": "out",
+      "type": "local_file_destination",
+      "label": "Staging file",
+      "config": {
+        "path": "data/out/master_child/ingest_staging.csv",
+        "format": "csv"
+      },
+      "position": { "x": 560, "y": 160 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "src", "target": "map" },
+    { "id": "e2", "source": "map", "target": "out" }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "role": "child",
+    "publish": {
+      "stage": "ingest",
+      "table": "orders_staging"
+    },
+    "contexts": {
+      "active": "DEV",
+      "sets": {
+        "DEV": { "env": "dev", "catalog": "sandbox" },
+        "QA": { "env": "qa", "catalog": "qa_main" },
+        "PROD": { "env": "prod", "catalog": "main" }
+      }
+    }
+  }
+}

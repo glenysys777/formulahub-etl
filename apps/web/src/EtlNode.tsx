@@ -24,6 +24,7 @@ const CATEGORY: Record<string, string> = {
   snowflake_destination: "db",
   databricks_job: "orch",
   databricks_sql: "orch",
+  run_pipeline: "orch",
 
   pgp_decrypt: "security",
   pgp_encrypt: "security",
@@ -120,6 +121,16 @@ export function ComponentGlyph({
         <rect x="2" y="3" width="12" height="10" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
         <path d="M2 6.5h12M6.5 3v10M9.5 3v10" stroke="currentColor" strokeWidth="1.2" />
         <path d="M4.2 12.2h3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  // Nested pipeline (Master → Child) — stacked frames + play
+  if (type === "run_pipeline") {
+    return (
+      <svg {...common}>
+        <rect x="1.5" y="2.5" width="10" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.35" />
+        <rect x="4.5" y="5.5" width="10" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.35" />
+        <path d="M8.2 8.2 11.2 10 8.2 11.8V8.2Z" fill="currentColor" />
       </svg>
     );
   }
@@ -265,6 +276,10 @@ function summary(type: string, config: Record<string, unknown>): string {
     const short = sql.length > 36 ? `${sql.slice(0, 36)}…` : sql || "SQL";
     return `${config.warehouse_id || "warehouse"} · ${short}`;
   }
+  if (type === "run_pipeline") {
+    const pub = config.publish_as ? ` → ${config.publish_as}` : "";
+    return `${config.pipeline_id || "child"}${pub}`;
+  }
   if (type === "local_file_source") return String(config.path || "");
   if (type === "http_api_source") return String(config.url || "HTTP API");
   if (type === "excel_source")
@@ -364,6 +379,8 @@ function friendlyLabel(type: string, label: string): string {
   if (type === "column_map" && (lower === "column map" || lower === "tmap" || !label)) return "Schema Map";
   if (type === "kafka_source") return label || "Kafka Source";
   if (type === "databricks_job") return label || "Databricks Job";
+  if (type === "databricks_sql") return label || "Databricks SQL";
+  if (type === "run_pipeline") return label || "Run Pipeline";
   return label || type;
 }
 

@@ -65,6 +65,8 @@ const PALETTE_ORDER = [
   "pgp_decrypt",
   "pgp_encrypt",
   "databricks_job",
+  "databricks_sql",
+  "run_pipeline",
   "snowflake_destination",
   "local_file_destination",
   "excel_destination",
@@ -103,6 +105,16 @@ function defaultConfigFor(type: string): Record<string, unknown> {
       sql: "SELECT * FROM orders WHERE dt = '${run_date}' AND env = '${context.env}'",
       wait_for_completion: true,
       demo: true,
+    };
+  if (type === "run_pipeline")
+    return {
+      pipeline_id: "",
+      context_mode: "inherit",
+      context_name: "",
+      run_params: {},
+      publish_as: "",
+      on_failure: "fail_master",
+      pass_rows: false,
     };
   if (type === "s3_source") return { bucket: "demo", key: "demo/orders_encrypted.csv.pgp" };
   if (type === "http_api_source")
@@ -1444,6 +1456,10 @@ function AppCanvas() {
                   onConfigReplace={replaceSelectedConfig}
                   onMetadataChange={updatePipelineMetadata}
                   focusJoin={inspectorFocus === "join"}
+                  onOpenPipeline={async (pid) => {
+                    const p = await api.getPipeline(pid);
+                    await loadPipeline(p);
+                  }}
                 />
               </>
             ) : (

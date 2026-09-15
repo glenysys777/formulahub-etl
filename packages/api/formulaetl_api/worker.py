@@ -148,13 +148,53 @@ class RunWorker:
                 get_connection = self.connections.get
                 if secret_provider is None:
                     secret_provider = self.connections._provider()
+
+            def get_pipeline(pid: str):
+                return self.pipelines.get(pid)
+
+            def record_child_run(
+                *,
+                run_id: str,
+                pipeline_id: str,
+                parent_run_id: str,
+                master_node_id: str | None = None,
+            ):
+                child_version = self.pipelines.get_current_version(pipeline_id)
+                version_id = child_version.id if child_version else ""
+                self.runs.enqueue(
+                    run_id=run_id,
+                    pipeline_id=pipeline_id,
+                    pipeline_version_id=version_id or f"nested:{pipeline_id}",
+                    parent_run_id=parent_run_id,
+                    master_node_id=master_node_id,
+                    queue=False,
+                    status=STATUS_RUNNING,
+                )
+
+            def complete_child_run(result: object) -> None:
+                from formulaetl.engine.runner import RunResult
+
+                if not isinstance(result, RunResult):
+                    return
+                child_version = self.pipelines.get_current_version(result.pipeline_id)
+                version_id = (
+                    child_version.id if child_version else f"nested:{result.pipeline_id}"
+                )
+                self.runs.complete_from_result(result, version_id)
+
             runner = PipelineRunner(
                 work_dir=self.work_dir,
                 demo_mode=self.demo_mode,
                 secret_provider=secret_provider,
                 get_connection=get_connection,
             )
-            result = runner.run(pipeline, run_id=run_id)
+            result = runner.run(
+                pipeline,
+                run_id=run_id,
+                get_pipeline=get_pipeline,
+                record_child_run=record_child_run,
+                complete_child_run=complete_child_run,
+            )
             # Ensure status reflects runner outcome
             if result.status == STATUS_RUNNING:
                 result.status = "success"

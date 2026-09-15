@@ -69,7 +69,18 @@ class PipelineRunner:
         self.secret_provider = secret_provider
         self.get_connection = get_connection
 
-    def run(self, pipeline: PipelineDefinition, run_id: str | None = None) -> RunResult:
+    def run(
+        self,
+        pipeline: PipelineDefinition,
+        run_id: str | None = None,
+        *,
+        pipeline_stack: list[str] | None = None,
+        get_pipeline: Any | None = None,
+        record_child_run: Any | None = None,
+        complete_child_run: Any | None = None,
+        parent_run_id: str | None = None,
+        master_node_id: str | None = None,
+    ) -> RunResult:
         run_id = run_id or str(uuid.uuid4())
         logs: list[str] = []
 
@@ -88,6 +99,7 @@ class PipelineRunner:
 
         from formulaetl.sdk.context import RunContext
 
+        stack = list(pipeline_stack) if pipeline_stack else [pipeline.id]
         ctx = RunContext(
             run_id=run_id,
             pipeline_id=pipeline.id,
@@ -98,6 +110,12 @@ class PipelineRunner:
             batch_size=self.batch_size,
             secret_provider=secret_provider,
             get_connection=self.get_connection,
+            pipeline_stack=stack,
+            parent_run_id=parent_run_id,
+            master_node_id=master_node_id,
+            get_pipeline=get_pipeline,
+            record_child_run=record_child_run,
+            complete_child_run=complete_child_run,
         )
 
         from formulaetl.sdk.vars import bind_pipeline_variables
@@ -140,6 +158,7 @@ class PipelineRunner:
             for nid in order:
                 node = node_map[nid]
                 nplan = exec_plan.nodes[nid]
+                ctx.variables["_current_node_id"] = nid
                 _log(
                     f"→ Running node '{node.label or nid}' ({node.type}) "
                     f"feed={nplan.feed} ({nplan.reason})"
@@ -151,7 +170,7 @@ class PipelineRunner:
                     nid, inbound, node_outputs, ctx, self.batch_size
                 )
 
-                # Resolve ${context.*} / ${run.*} / ${env.*} / ${upstream.*} / ${key}
+                # Resolve ${context.*} / ${run.*} / ${env.*} / ${upstream.*} / ${child.*} / ${key}
                 # Keep original templates for components that log / sidecar them.
                 from formulaetl.sdk.vars import resolve_config_vars, find_refs
 
@@ -234,6 +253,11 @@ class PipelineRunner:
                 "rows_rejected": total_rej,
                 "batch_size": self.batch_size,
             }
+            children = ctx.variables.get("children")
+            if isinstance(children, dict) and children:
+                result.metrics["children"] = {
+                    str(k): dict(v) for k, v in children.items() if isinstance(v, dict)
+                }
             result.outputs = {
                 nid: {**_summarize_output(o), "component_type": node_map[nid].type}
                 for nid, o in node_outputs.items()
@@ -254,6 +278,11 @@ class PipelineRunner:
                     ),
                     "batch_size": self.batch_size,
                 }
+                children = ctx.variables.get("children")
+                if isinstance(children, dict) and children:
+                    result.metrics["children"] = {
+                        str(k): dict(v) for k, v in children.items() if isinstance(v, dict)
+                    }
                 result.outputs = {
                     nid: {
                         **_summarize_output(o),

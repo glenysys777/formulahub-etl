@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS runs (
   created_at REAL NOT NULL,
   started_at REAL,
   finished_at REAL,
-  updated_at REAL NOT NULL
+  updated_at REAL NOT NULL,
+  parent_run_id TEXT,
+  master_node_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS node_runs (
@@ -155,6 +157,17 @@ CREATE INDEX IF NOT EXISTS idx_connections_kind ON connections(kind);
 CREATE INDEX IF NOT EXISTS idx_secrets_name ON secrets(name);
 """
 
+
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Add parent_run_id / master_node_id for Master→Child run linkage (idempotent)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    if "parent_run_id" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN parent_run_id TEXT")
+    if "master_node_id" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN master_node_id TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id)")
+
+
 # Canonical run / node statuses (API uses lowercase for backward compatibility).
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
@@ -196,6 +209,8 @@ class Database:
                     "INSERT INTO schema_meta(key, value) VALUES ('version', ?)",
                     (str(SCHEMA_VERSION),),
                 )
+                # Fresh DB: SCHEMA_SQL already has v3 columns; still ensure index.
+                _migrate_v3(conn)
             else:
                 try:
                     current = int(row["value"])
@@ -203,6 +218,8 @@ class Database:
                     current = 0
                 if current < 2:
                     conn.executescript(_MIGRATE_V2_SQL)
+                if current < 3:
+                    _migrate_v3(conn)
                 if current < SCHEMA_VERSION:
                     conn.execute(
                         "UPDATE schema_meta SET value = ? WHERE key = 'version'",

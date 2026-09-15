@@ -61,7 +61,7 @@ For step-by-step “how to build” each major case, see [USE_CASES_HOW.md](./US
 | SQL Server / Oracle / full JDBC catalog | Next after Postgres pattern |
 | Salesforce / SAP / mainframe | Later |
 | Embedded Spark large-scale engine | Out of scope — orchestrate *their* Databricks jobs instead |
-| Shared joblets / contexts / enterprise lineage UI | Enterprise tier *(planned)* |
+| Shared Master/Child pipelines / contexts / enterprise lineage UI | **Job Contexts** + **Run Pipeline** (Master → Child) Community v1 shipped — see [MASTER_CHILD_PIPELINES.md](../architecture/MASTER_CHILD_PIPELINES.md). Enterprise lineage UI *(planned)* |
 | Cloud HA multi-node scheduler | Enterprise / paid *(planned)* — Community ships self-hosted cron |
 
 ## How to talk to clients

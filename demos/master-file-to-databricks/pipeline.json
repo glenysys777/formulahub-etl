@@ -1,0 +1,79 @@
+{
+  "id": "demo-master-file-to-databricks",
+  "name": "Master — File → Databricks (Run Pipeline ×2)",
+  "description": "Master pipeline: Run Pipeline Child A (file ingest) then Child B (Databricks SQL DEMO). Job Contexts inherit (try FORMULAETL_CONTEXT=QA). Secrets are never inherited. DEMO sidecars ≠ LIVE.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "run_ingest",
+      "type": "run_pipeline",
+      "label": "Run Pipeline — Ingest",
+      "config": {
+        "pipeline_id": "demos/master-file-to-databricks/child-ingest.json",
+        "context_mode": "inherit",
+        "publish_as": "ingest",
+        "on_failure": "fail_master",
+        "pass_rows": false,
+        "run_params": {}
+      },
+      "position": { "x": 80, "y": 180 }
+    },
+    {
+      "id": "run_load",
+      "type": "run_pipeline",
+      "label": "Run Pipeline — Load",
+      "config": {
+        "pipeline_id": "demos/master-file-to-databricks/child-load.json",
+        "context_mode": "inherit",
+        "publish_as": "load",
+        "on_failure": "fail_master",
+        "pass_rows": false,
+        "run_params": {
+          "ingest_note": "from_ingest_rows=${child.ingest.rows_out}",
+          "ingest_stage": "${child.ingest.stage}"
+        }
+      },
+      "position": { "x": 420, "y": 180 }
+    },
+    {
+      "id": "log",
+      "type": "logger_metrics",
+      "label": "Logger / Metrics",
+      "config": {
+        "label": "master_done",
+        "log_sample": 0
+      },
+      "position": { "x": 760, "y": 180 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "run_ingest", "target": "run_load" },
+    { "id": "e2", "source": "run_load", "target": "log" }
+  ],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "use_case": "master-child-run-pipeline",
+    "run_params": {
+      "run_date": "2026-09-14",
+      "job_name": "master-file-to-databricks"
+    },
+    "contexts": {
+      "active": "DEV",
+      "sets": {
+        "DEV": {
+          "env": "dev",
+          "catalog": "sandbox"
+        },
+        "QA": {
+          "env": "qa",
+          "catalog": "qa_main"
+        },
+        "PROD": {
+          "env": "prod",
+          "catalog": "main"
+        }
+      }
+    }
+  }
+}

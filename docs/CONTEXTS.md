@@ -32,7 +32,11 @@ If a pipeline has no contexts yet, Studio seeds **DEV / QA / PROD** with empty s
 
 **Databricks SQL / Job** node inspector still has **Variables**: active-context switch + resolved `${…}` preview. Both panels read/write the same `metadata.contexts` / `metadata.run_params`.
 
-Help copy in Studio: *Environment parameters for this pipeline. Use `${context.key}` in Databricks SQL / Job params. Tokens stay in Connections / secrets.*
+Help copy in Studio: *Environment parameters for this pipeline. Use `${context.key}` in Databricks SQL / Job params and Child pipelines via **Run Pipeline** with context mode `inherit`. Tokens stay in Connections / secrets — never inherited across Master → Child.*
+
+## Master → Child inheritance
+
+See [architecture/MASTER_CHILD_PIPELINES.md](./architecture/MASTER_CHILD_PIPELINES.md). A Master **Run Pipeline** node can set `context_mode=inherit` so the Child uses the Master’s active Job Context name and merged values. Secrets are **not** inherited. Later Master nodes may read `${child.<publish_as>.…}` from earlier children.
 
 ## Job Contexts on a pipeline (JSON shape)
 

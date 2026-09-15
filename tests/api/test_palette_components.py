@@ -49,6 +49,8 @@ def test_components_endpoint_has_palette_essentials(client: TestClient):
         "tmap",
         "transform",
         "databricks_job",
+        "databricks_sql",
+        "run_pipeline",
         "local_file_destination",
     ):
         assert required in by_type, f"missing palette component {required}"
@@ -63,6 +65,9 @@ def test_components_endpoint_has_palette_essentials(client: TestClient):
     assert by_type["kafka_source"]["display_name"] == "Kafka Source"
     assert by_type["databricks_job"]["display_name"] == "Databricks Job"
     assert by_type["databricks_sql"]["display_name"] == "Databricks SQL"
+    assert by_type["run_pipeline"]["display_name"] == "Run Pipeline"
+    assert by_type["run_pipeline"]["category"] == "orch"
+    assert "talend" not in (by_type["run_pipeline"]["display_name"] or "").lower()
     assert by_type["tmap"]["display_name"] == "Field Mapper"
     assert by_type["s3_source"]["display_name"] == "S3 Source"
 

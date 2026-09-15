@@ -78,6 +78,8 @@ export type RunStatus = {
   logs: string[];
   error?: string | null;
   duration_ms?: number;
+  parent_run_id?: string | null;
+  master_node_id?: string | null;
 };
 
 export type ValidateCheck = {

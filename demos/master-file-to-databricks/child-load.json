@@ -1,0 +1,44 @@
+{
+  "id": "demo-master-child-load",
+  "name": "Child B — Databricks SQL load",
+  "description": "Child pipeline: DEMO Databricks SQL using inherited Job Context (${context.env}/${context.catalog}) and Master run_params. LIVE Databricks remains UNPROVEN.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "sql",
+      "type": "databricks_sql",
+      "label": "Databricks SQL",
+      "config": {
+        "workspace_host": "demo",
+        "warehouse_id": "demo-warehouse",
+        "http_path": "/sql/1.0/warehouses/demo",
+        "sql": "INSERT INTO ${context.catalog}.orders_staging\nSELECT * FROM orders\nWHERE order_date = '${run_date}'\n  AND env = '${context.env}'\n  AND note = '${ingest_note}'",
+        "wait_for_completion": true,
+        "poll_interval_sec": 1,
+        "demo": true,
+        "demo_output_dir": "data/out/master_child/databricks_sql_demo"
+      },
+      "position": { "x": 200, "y": 160 }
+    }
+  ],
+  "edges": [],
+  "metadata": {
+    "demo": true,
+    "requires_demo_mode": true,
+    "role": "child",
+    "publish": {
+      "stage": "load"
+    },
+    "run_params": {
+      "run_date": "2026-09-14"
+    },
+    "contexts": {
+      "active": "DEV",
+      "sets": {
+        "DEV": { "env": "dev", "catalog": "sandbox" },
+        "QA": { "env": "qa", "catalog": "qa_main" },
+        "PROD": { "env": "prod", "catalog": "main" }
+      }
+    }
+  }
+}
