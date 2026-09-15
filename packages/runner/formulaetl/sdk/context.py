@@ -65,6 +65,13 @@ class RunContext:
     # Phase F: optional connection + secret resolution (set by PipelineRunner)
     secret_provider: Any | None = None
     get_connection: Callable[[str], Any] | None = None
+    # Master / Child nesting (see docs/architecture/MASTER_CHILD_PIPELINES.md)
+    pipeline_stack: list[str] = field(default_factory=list)
+    parent_run_id: str | None = None
+    master_node_id: str | None = None
+    get_pipeline: Callable[[str], Any] | None = None
+    record_child_run: Callable[..., Any] | None = None
+    complete_child_run: Callable[..., Any] | None = None
 
     def temp_dir(self) -> Path:
         """Per-run scratch directory for ArtifactHandle temp files."""

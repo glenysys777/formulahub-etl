@@ -6,6 +6,7 @@ Supports namespaced refs in string configs and SQL text:
 - ``${run.key}`` — run_id, pipeline_id, run_date, …
 - ``${env.NAME}`` — process environment (explicit; not bare ``${NAME}``)
 - ``${upstream.field}`` — field from the first upstream row
+- ``${child.publish_as.key}`` — metrics / publish map from an earlier Run Pipeline sibling
 - ``${key}`` — merged param map (run_params + active context + extras)
 
 Job Contexts live on ``pipeline.metadata.contexts``:
@@ -33,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-# ${context.env} | ${run.run_date} | ${env.HOME} | ${upstream.order_id} | ${run_date}
+# ${context.env} | ${run.run_date} | ${env.HOME} | ${upstream.order_id} | ${child.x.rows_out} | ${run_date}
 _VAR_RE = re.compile(r"\$\{([^{}]+)\}")
 
 _SKIP_RESOLVE_KEYS = frozenset(
@@ -62,6 +63,7 @@ class VarScope:
     env: Mapping[str, str] = field(default_factory=lambda: os.environ)
     upstream: dict[str, Any] = field(default_factory=dict)
     params: dict[str, Any] = field(default_factory=dict)
+    children: dict[str, dict[str, Any]] = field(default_factory=dict)
     active_context: str = ""
 
     def lookup(self, expr: str) -> tuple[Any | None, str]:
@@ -93,6 +95,16 @@ class VarScope:
             if key in self.upstream:
                 return self.upstream[key], "upstream"
             return None, "upstream"
+
+        if raw.startswith("child."):
+            rest = raw[len("child.") :]
+            if "." not in rest:
+                return None, "child"
+            publish_as, key = rest.split(".", 1)
+            block = self.children.get(publish_as) or {}
+            if key in block:
+                return block[key], "child"
+            return None, "child"
 
         # Plain ${key}: params → context → run → upstream (never bare env)
         if key_in(self.params, raw):
@@ -254,16 +266,21 @@ def build_scope(
     upstream_row: dict[str, Any] | None = None,
     env: Mapping[str, str] | None = None,
     extra_params: dict[str, Any] | None = None,
+    children: dict[str, dict[str, Any]] | None = None,
 ) -> VarScope:
     """Build a ``VarScope`` from pipeline metadata + run identity."""
     meta = metadata or {}
     active, sets = parse_contexts(meta)
     context = dict(sets.get(active) or {})
     run_params = meta.get("run_params") if isinstance(meta.get("run_params"), dict) else {}
-    run = build_run_vars(run_id=run_id, pipeline_id=pipeline_id, run_params=run_params)
+    # Strip internal nesting bookkeeping from plain ${key} map
+    run_params_public = {
+        str(k): v for k, v in (run_params or {}).items() if not str(k).startswith("_")
+    }
+    run = build_run_vars(run_id=run_id, pipeline_id=pipeline_id, run_params=run_params_public)
     # Merged plain map: run_params + context (+ extras). Context wins over run_params.
     params: dict[str, Any] = {}
-    params.update({str(k): v for k, v in (run_params or {}).items()})
+    params.update(run_params_public)
     params.update(context)
     if extra_params:
         params.update({str(k): v for k, v in extra_params.items()})
@@ -274,12 +291,22 @@ def build_scope(
             for k, v in upstream_row.items()
             if not str(k).startswith("_")
         }
+    child_map: dict[str, dict[str, Any]] = {}
+    if children:
+        child_map = {str(k): dict(v) for k, v in children.items() if isinstance(v, dict)}
+    elif isinstance(run_params, dict) and isinstance(run_params.get("_children"), dict):
+        child_map = {
+            str(k): dict(v)
+            for k, v in run_params["_children"].items()
+            if isinstance(v, dict)
+        }
     return VarScope(
         context=context,
         run=run,
         env=env if env is not None else os.environ,
         upstream=upstream,
         params=params,
+        children=child_map,
         active_context=active,
     )
 
@@ -289,15 +316,21 @@ def bind_pipeline_variables(ctx: Any, pipeline: Any) -> VarScope:
     meta = getattr(pipeline, "metadata", None) or {}
     if not isinstance(meta, dict):
         meta = {}
+    existing_children = ctx.variables.get("children")
+    children = existing_children if isinstance(existing_children, dict) else None
     scope = build_scope(
         run_id=str(ctx.run_id),
         pipeline_id=str(getattr(pipeline, "id", ctx.pipeline_id)),
         metadata=meta,
+        children=children,
     )
     ctx.variables["_var_scope"] = scope
+    ctx.variables["_pipeline_metadata"] = meta
     ctx.variables["_contexts_active"] = scope.active_context
     ctx.variables["context"] = dict(scope.context)
     ctx.variables["run"] = dict(scope.run)
+    if scope.children and "children" not in ctx.variables:
+        ctx.variables["children"] = dict(scope.children)
     # Flatten common run keys for casual access
     for k, v in scope.run.items():
         ctx.variables.setdefault(k, v)
@@ -325,12 +358,17 @@ def scope_from_context(
         upstream = {
             str(k): v for k, v in row.items() if not str(k).startswith("_")
         }
+    children = dict(getattr(base, "children", None) or {})
+    live = ctx.variables.get("children")
+    if isinstance(live, dict):
+        children = {str(k): dict(v) for k, v in live.items() if isinstance(v, dict)}
     return VarScope(
         context=dict(base.context),
         run=dict(base.run),
         env=base.env,
         upstream=upstream,
         params=dict(base.params),
+        children=children,
         active_context=base.active_context,
     )
 

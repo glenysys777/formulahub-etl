@@ -33,6 +33,7 @@ from formulaetl.components.mysql_destination import MySQLDestination
 from formulaetl.components.dest_snowflake import SnowflakeDestination
 from formulaetl.components.databricks_job import DatabricksJob
 from formulaetl.components.databricks_sql import DatabricksSQL
+from formulaetl.components.run_pipeline import RunPipeline
 from formulaetl.components.archive import ArchiveFiles
 from formulaetl.components.logger import LoggerMetrics
 
@@ -70,6 +71,7 @@ __all__ = [
     "SnowflakeDestination",
     "DatabricksJob",
     "DatabricksSQL",
+    "RunPipeline",
     "ArchiveFiles",
     "LoggerMetrics",
 ]

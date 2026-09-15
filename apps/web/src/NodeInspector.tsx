@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ComponentInfo, ParamDef } from "./api";
+import type { ComponentInfo, ParamDef, Pipeline } from "./api";
+import { api } from "./api";
 import { VariablesPanel } from "./VariablesPanel";
 
 function friendlyNodeId(nodeId: string, componentType: string, _label?: string): string {
@@ -30,6 +31,8 @@ type Props = {
   onMetadataChange?: (metadata: Record<string, unknown>) => void;
   /** Double-click on Lookup Join focuses join fields in this inspector. */
   focusJoin?: boolean;
+  /** Open another pipeline in Studio (Run Pipeline → Open child). */
+  onOpenPipeline?: (pipelineId: string) => void | Promise<void>;
 };
 
 function isEmpty(value: unknown): boolean {
@@ -137,10 +140,13 @@ export function NodeInspector({
   onConfigReplace,
   onMetadataChange,
   focusJoin = false,
+  onOpenPipeline,
 }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [jsonDraft, setJsonDraft] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [pipelineOptions, setPipelineOptions] = useState<Pipeline[]>([]);
+  const [openBusy, setOpenBusy] = useState(false);
 
   const parameters = component?.parameters || [];
   const missing = useMemo(
@@ -155,6 +161,22 @@ export function NodeInspector({
       (document.querySelector("[data-testid='join-config'] select, [data-testid='join-config'] input:not([readonly])") as HTMLElement | null);
     el?.focus();
   }, [focusJoin, componentType, nodeId]);
+
+  useEffect(() => {
+    if (componentType !== "run_pipeline") return;
+    let cancelled = false;
+    api
+      .listPipelines()
+      .then((list) => {
+        if (!cancelled) setPipelineOptions(list);
+      })
+      .catch(() => {
+        if (!cancelled) setPipelineOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [componentType, nodeId]);
 
   const openAdvanced = () => {
     setJsonDraft(JSON.stringify(config ?? {}, null, 2));
@@ -191,7 +213,21 @@ export function NodeInspector({
             ? "Run SQL on a Databricks SQL Warehouse. Use ${run_date}, ${context.env}, ${upstream.field} — preview resolves against the active Job Context without executing live. DEMO writes a local sidecar; LIVE is UNPROVEN until credentials."
             : componentType === "databricks_job"
               ? "Trigger a Databricks Job. Notebook/python param values accept ${…} variables. DEMO sidecar only until live token + workspace."
-              : null;
+              : componentType === "run_pipeline"
+                ? "Run a Child pipeline from this Master. Context mode inherit uses the Master active Job Context name and merges values (secrets never inherited). Later nodes can read ${child.<publish_as>.…}."
+                : null;
+
+  const childPipelineId = String(config.pipeline_id || "").trim();
+
+  const openChild = async () => {
+    if (!childPipelineId || !onOpenPipeline) return;
+    setOpenBusy(true);
+    try {
+      await onOpenPipeline(childPipelineId);
+    } finally {
+      setOpenBusy(false);
+    }
+  };
 
   return (
     <div className="inspector">
@@ -248,6 +284,43 @@ export function NodeInspector({
               componentType === "lookup_join" && param.key === "how"
                 ? "inspector-join-how"
                 : undefined;
+
+            if (componentType === "run_pipeline" && param.key === "pipeline_id") {
+              const ids = new Set(pipelineOptions.map((p) => p.id));
+              const current = String(value || "");
+              return (
+                <div className={fieldClass} key={param.key} data-testid="run-pipeline-picker">
+                  <label>
+                    {param.label}
+                    {param.required ? " *" : ""}
+                  </label>
+                  <select
+                    value={current}
+                    onChange={(e) => onChange(param.key, e.target.value)}
+                    data-testid="run-pipeline-select"
+                  >
+                    <option value="">Select a Child pipeline…</option>
+                    {pipelineOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name || p.id}
+                      </option>
+                    ))}
+                    {current && !ids.has(current) ? (
+                      <option value={current}>{current} (path / custom)</option>
+                    ) : null}
+                  </select>
+                  <input
+                    type="text"
+                    value={current}
+                    placeholder="Or paste pipeline id / relative JSON path"
+                    onChange={(e) => onChange(param.key, e.target.value)}
+                    data-testid="run-pipeline-id-input"
+                    style={{ marginTop: 6 }}
+                  />
+                  {param.help ? <div className="field-help">{param.help}</div> : null}
+                </div>
+              );
+            }
 
             if (param.type === "boolean") {
               return (
@@ -343,6 +416,23 @@ export function NodeInspector({
           })
         )}
       </div>
+
+      {componentType === "run_pipeline" && (
+        <div className="field" data-testid="open-child-pipeline">
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={!childPipelineId || !onOpenPipeline || openBusy}
+            onClick={() => void openChild()}
+          >
+            {openBusy ? "Opening…" : "Open child pipeline"}
+          </button>
+          <div className="field-help">
+            Opens the selected Child pipeline in Studio. Use Job Contexts inherit on the Master so
+            DEV/QA/PROD flows through Run Pipeline steps.
+          </div>
+        </div>
+      )}
 
       <div className="inspector-advanced">
         <button type="button" className="btn-link" onClick={openAdvanced}>

@@ -190,8 +190,9 @@ export function JobContextsPanel({ pipelineId, metadata, onMetadataChange }: Pro
     <div className="contexts-form" data-testid="job-contexts-panel">
       <p className="schedule-note contexts-help">
         Environment parameters for this pipeline. Use{" "}
-        <code>{"${context.key}"}</code> in Databricks SQL / Job params. Tokens stay in Connections /
-        secrets.
+        <code>{"${context.key}"}</code> in Databricks SQL / Job params and Child pipelines via{" "}
+        <strong>Run Pipeline</strong> with context mode <code>inherit</code>. Tokens stay in
+        Connections / secrets — never inherited across Master → Child.
       </p>
 
       <label className="field-label">Active context</label>

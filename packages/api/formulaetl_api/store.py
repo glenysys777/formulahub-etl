@@ -133,6 +133,8 @@ class DurableRun:
     started_at: float | None = None
     finished_at: float | None = None
     updated_at: float = 0.0
+    parent_run_id: str | None = None
+    master_node_id: str | None = None
 
     def to_run_result(self) -> RunResult:
         return RunResult(
@@ -158,6 +160,8 @@ class DurableRun:
             "created_at": self.created_at,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
+            "parent_run_id": self.parent_run_id,
+            "master_node_id": self.master_node_id,
         }
         if include_detail:
             base.update(
@@ -445,23 +449,33 @@ class RunStore:
         pipeline_id: str,
         pipeline_version_id: str,
         logs: list[str] | None = None,
+        parent_run_id: str | None = None,
+        master_node_id: str | None = None,
+        queue: bool = True,
+        status: str | None = None,
     ) -> DurableRun:
-        """Create a QUEUED run and queue row. Returns quickly."""
+        """Create a run (optionally queued). Returns quickly.
+
+        Nested Master→Child runs may pass ``parent_run_id`` / ``master_node_id``
+        and ``queue=False`` with ``status=running`` for in-process child ledgers.
+        """
         self.ensure()
         now = _now()
         logs = list(logs or [])
+        initial = status or STATUS_QUEUED
         with self._lock, self.db._lock:
             conn = self.db.connect()
             conn.execute(
                 "INSERT INTO runs(run_id, pipeline_id, pipeline_version_id, status, "
                 "metrics_json, node_metrics_json, logs_json, error, outputs_json, "
-                "duration_ms, created_at, started_at, finished_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "duration_ms, created_at, started_at, finished_at, updated_at, "
+                "parent_run_id, master_node_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     run_id,
                     pipeline_id,
                     pipeline_version_id,
-                    STATUS_QUEUED,
+                    initial,
                     "{}",
                     "{}",
                     json.dumps(logs),
@@ -469,26 +483,29 @@ class RunStore:
                     "{}",
                     0.0,
                     now,
-                    None,
-                    None,
-                    now,
-                ),
-            )
-            conn.execute(
-                "INSERT INTO job_queue(run_id, pipeline_id, pipeline_version_id, "
-                "status, claimed_by, claimed_at, created_at, priority) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (
-                    run_id,
-                    pipeline_id,
-                    pipeline_version_id,
-                    "queued",
-                    None,
+                    now if initial == STATUS_RUNNING else None,
                     None,
                     now,
-                    0,
+                    parent_run_id,
+                    master_node_id,
                 ),
             )
+            if queue:
+                conn.execute(
+                    "INSERT INTO job_queue(run_id, pipeline_id, pipeline_version_id, "
+                    "status, claimed_by, claimed_at, created_at, priority) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        run_id,
+                        pipeline_id,
+                        pipeline_version_id,
+                        "queued",
+                        None,
+                        None,
+                        now,
+                        0,
+                    ),
+                )
             conn.execute(
                 "INSERT INTO run_events(run_id, ts, event_type, from_status, to_status, "
                 "message, payload_json) VALUES (?,?,?,?,?,?,?)",
@@ -497,9 +514,16 @@ class RunStore:
                     now,
                     "state_transition",
                     None,
-                    STATUS_QUEUED,
-                    "Run queued",
-                    "{}",
+                    initial,
+                    "Child run started"
+                    if parent_run_id
+                    else ("Run queued" if queue else f"Run {initial}"),
+                    json.dumps(
+                        {
+                            "parent_run_id": parent_run_id,
+                            "master_node_id": master_node_id,
+                        }
+                    ),
                 ),
             )
         return self.get(run_id)  # type: ignore[return-value]
@@ -695,7 +719,8 @@ class RunStore:
         row = self.db.execute(
             "SELECT run_id, pipeline_id, pipeline_version_id, status, metrics_json, "
             "node_metrics_json, logs_json, error, outputs_json, duration_ms, "
-            "created_at, started_at, finished_at, updated_at FROM runs WHERE run_id=?",
+            "created_at, started_at, finished_at, updated_at, "
+            "parent_run_id, master_node_id FROM runs WHERE run_id=?",
             (run_id,),
         ).fetchone()
         if row is None:
@@ -707,7 +732,8 @@ class RunStore:
         rows = self.db.execute(
             "SELECT run_id, pipeline_id, pipeline_version_id, status, metrics_json, "
             "node_metrics_json, logs_json, error, outputs_json, duration_ms, "
-            "created_at, started_at, finished_at, updated_at FROM runs "
+            "created_at, started_at, finished_at, updated_at, "
+            "parent_run_id, master_node_id FROM runs "
             "ORDER BY created_at DESC"
         ).fetchall()
         return [self._row_to_run(r) for r in rows]
@@ -861,6 +887,9 @@ class RunStore:
 
     @staticmethod
     def _row_to_run(row: Any) -> DurableRun:
+        keys = row.keys() if hasattr(row, "keys") else []
+        parent = row["parent_run_id"] if "parent_run_id" in keys else None
+        master_node = row["master_node_id"] if "master_node_id" in keys else None
         return DurableRun(
             run_id=row["run_id"],
             pipeline_id=row["pipeline_id"],
@@ -876,6 +905,8 @@ class RunStore:
             started_at=row["started_at"],
             finished_at=row["finished_at"],
             updated_at=float(row["updated_at"] or 0.0),
+            parent_run_id=parent,
+            master_node_id=master_node,
         )
 
 
