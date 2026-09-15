@@ -657,12 +657,36 @@ def discover(
         result = _discover_postgres_or_mysql(ctype, config, wd, demo_mode)
     elif ctype in ("s3_source",):
         result = _discover_s3(config, wd, demo_mode)
+    elif ctype in ("schema_from_json", "json_schema"):
+        result = _discover_schema_from_json(config, wd)
     else:
         raise ValueError(
             f"Schema discovery not supported for component_type={component_type!r}"
         )
 
     return result.to_dict()
+
+
+def _discover_schema_from_json(config: dict[str, Any], work_dir: Path) -> SchemaResult:
+    from formulaetl.components.schema_from_json import load_schema_payload
+
+    content = config.get("content")
+    path = None
+    if not content and config.get("path"):
+        path = _resolve_path(work_dir, str(config["path"]))
+        if not path.exists():
+            raise FileNotFoundError(f"schema_from_json: file not found: {path}")
+    columns, _meta = load_schema_payload(
+        content=content if isinstance(content, str) else None,
+        path=path,
+        source_kind=str(config.get("source_kind") or "auto"),
+    )
+    return SchemaResult(
+        columns=[
+            SchemaColumn(name=k, type=v, nullable=True) for k, v in columns.items()
+        ],
+        sample_rows=[],
+    )
 
 
 __all__ = ["SchemaColumn", "SchemaResult", "discover"]

@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from formulaetl.engine.planner import ExecutionPlan, NodePlan, plan_pipeline
 from formulaetl.models.pipeline import PipelineDefinition
@@ -80,6 +80,7 @@ class PipelineRunner:
         complete_child_run: Any | None = None,
         parent_run_id: str | None = None,
         master_node_id: str | None = None,
+        on_node_progress: Callable[..., Any] | None = None,
     ) -> RunResult:
         run_id = run_id or str(uuid.uuid4())
         logs: list[str] = []
@@ -163,6 +164,17 @@ class PipelineRunner:
                     f"→ Running node '{node.label or nid}' ({node.type}) "
                     f"feed={nplan.feed} ({nplan.reason})"
                 )
+                _emit_node_progress(
+                    on_node_progress,
+                    node_id=nid,
+                    component_type=node.type,
+                    status="running",
+                    rows_in=0,
+                    rows_out=0,
+                    rows_rejected=0,
+                    duration_ms=0.0,
+                    message=f"Running {node.label or nid}",
+                )
                 # Phase F: merge connection_id + secret refs (never persist merged secrets)
                 resolved_cfg = ctx.resolve_config(node.config, component_type=node.type)
 
@@ -234,6 +246,22 @@ class PipelineRunner:
                     f"out={cres.metrics.rows_out} rejected={cres.metrics.rows_rejected} "
                     f"feed={nplan.feed} ({cres.metrics.duration_ms:.1f}ms)"
                 )
+                _emit_node_progress(
+                    on_node_progress,
+                    node_id=nid,
+                    component_type=node.type,
+                    status="success",
+                    rows_in=cres.metrics.rows_in,
+                    rows_out=cres.metrics.rows_out,
+                    rows_rejected=cres.metrics.rows_rejected,
+                    duration_ms=cres.metrics.duration_ms,
+                    extras=dict(cres.metrics.extras),
+                    message=(
+                        f"{node.label or nid}: "
+                        f"{cres.metrics.rows_in}→{cres.metrics.rows_out}"
+                    ),
+                )
+                _maybe_progress_tick(self.demo_mode, on_node_progress)
 
             # Final harvest for any lazy nodes still pending (e.g. last sink).
             from formulaetl.sdk.adapter import harvest_lazy_metrics
@@ -268,6 +296,25 @@ class PipelineRunner:
             result.status = "failed"
             result.error = str(exc)
             _log(f"Pipeline FAILED: {exc}")
+            failed_nid = ctx.variables.get("_current_node_id")
+            if failed_nid and on_node_progress:
+                failed_type = (
+                    pipeline.node_map()[failed_nid].type
+                    if failed_nid in pipeline.node_map()
+                    else "unknown"
+                )
+                _emit_node_progress(
+                    on_node_progress,
+                    node_id=str(failed_nid),
+                    component_type=str(failed_type),
+                    status="failed",
+                    rows_in=0,
+                    rows_out=0,
+                    rows_rejected=0,
+                    duration_ms=0.0,
+                    error=str(exc),
+                    message=f"Failed {failed_nid}: {exc}",
+                )
             # Partial aggregates if some nodes finished
             if node_outputs:
                 result.metrics = {
@@ -306,6 +353,58 @@ class PipelineRunner:
         if exec_plan is not None and "planner_nodes" not in result.metrics:
             result.metrics["planner_nodes"] = len(exec_plan.nodes)
         return result
+
+
+def _emit_node_progress(
+    callback: Callable[..., Any] | None,
+    *,
+    node_id: str,
+    component_type: str,
+    status: str,
+    rows_in: int,
+    rows_out: int,
+    rows_rejected: int,
+    duration_ms: float,
+    error: str | None = None,
+    extras: dict[str, Any] | None = None,
+    message: str | None = None,
+) -> None:
+    if callback is None:
+        return
+    try:
+        callback(
+            node_id=node_id,
+            component_type=component_type,
+            status=status,
+            rows_in=rows_in,
+            rows_out=rows_out,
+            rows_rejected=rows_rejected,
+            duration_ms=duration_ms,
+            error=error,
+            extras=extras,
+            message=message,
+        )
+    except Exception:
+        # Progress is best-effort — never fail the pipeline for UI bookkeeping.
+        pass
+
+
+def _maybe_progress_tick(
+    demo_mode: bool, on_node_progress: Callable[..., Any] | None
+) -> None:
+    """Small DEMO pause so Studio polls can show live counters before finish."""
+    if on_node_progress is None:
+        return
+    raw = os.environ.get("FORMULAETL_PROGRESS_TICK_MS")
+    if raw is None:
+        pause_ms = 75 if demo_mode else 0
+    else:
+        try:
+            pause_ms = int(raw)
+        except ValueError:
+            pause_ms = 0
+    if pause_ms > 0:
+        time.sleep(pause_ms / 1000.0)
 
 
 def _release_result_rows(cres: ComponentResult) -> None:

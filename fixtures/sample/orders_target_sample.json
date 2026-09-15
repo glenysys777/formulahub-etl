@@ -1,0 +1,9 @@
+{
+  "order": { "id": 2001, "date": "2024-03-01", "status": "shipped" },
+  "customer": { "id": 301, "name": "Acme Corp", "email": "ops@acme.example.com" },
+  "product_sku": "SKU-A01",
+  "quantity": 2,
+  "amount": 45.5,
+  "currency": "USD",
+  "channel": "api"
+}

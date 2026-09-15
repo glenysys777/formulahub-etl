@@ -20,9 +20,11 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 | Transform / Filter / Sort / Aggregate / Dedupe | Casts, keep-when, keys, group aggs, unique | ALPHA |
 | **Lookup Join** | **Main** + **Lookup** handles (or Lookup file); left/inner/right/full; match all/first | ALPHA |
 | Python Row | Sandboxed row/batch Python | ALPHA |
-| Schema Validate | Required cols + types; rejects handle | ALPHA |
+| Schema Validate | Required cols + types; rejects handle; can use upstream **Schema from JSON** `target_schema` | ALPHA |
+| **Schema from JSON** | Load JSON Schema or sample JSON → fields for Validate / Field Mapper (Discover) | DEMO Soft-PASS |
 | PGP Decrypt / Encrypt | Path/temp; DEMO keys under `fixtures/keys/` | DEMO / ALPHA |
 | Local / Excel Destination | Write under workspace | ALPHA |
+| **Write JSON** | JSON array or JSON Lines; pretty; optional nest map | DEMO Soft-PASS |
 | Snowflake Destination | DEMO filesystem sidecar | DEMO (live blocker if sold as warehouse) |
 | Databricks Job / SQL | Jobs / Statement API; `${…}` vars; DEMO sidecars | DEMO (LIVE UNPROVEN) |
 | SFTP / Postgres / MySQL / SQLite Destination | DEMO mocks or local DB | DEMO / ALPHA |
@@ -45,6 +47,8 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 - Projects + Git → see `PROJECTS_AND_GIT.md`
 - Desktop: double-click **FormulaHub Studio.app** → API + Studio window (browser is optional menu item)
 - **Job Contexts** (right rail): DEV/QA/PROD key–value editor + `run_date` / `job_name`; same metadata as Databricks Variables preview — see `docs/CONTEXTS.md`
+- **Live run counters Soft-PASS:** mid-run `node_runs` poll → canvas rows in/out badges + edge flow — see `HAVE_VS_MISSING_RUN_JSON.md`
+- **Write JSON / Schema from JSON Soft-PASS:** palette + `demos/api-json-write` — see `HAVE_VS_MISSING_RUN_JSON.md`
 
 ## Explicitly not in this wave
 

@@ -52,6 +52,7 @@ const PALETTE_ORDER = [
   "csv_parser",
   "json_parser",
   "xml_parser",
+  "schema_from_json",
   "column_map",
   "tmap",
   "transform",
@@ -68,6 +69,7 @@ const PALETTE_ORDER = [
   "databricks_sql",
   "run_pipeline",
   "snowflake_destination",
+  "write_json",
   "local_file_destination",
   "excel_destination",
   "sftp_destination",
@@ -120,6 +122,10 @@ function defaultConfigFor(type: string): Record<string, unknown> {
   if (type === "http_api_source")
     return { url: "https://api.example.com/v1/orders", method: "GET", json_path: "data.items", demo: true };
   if (type === "local_file_destination") return { path: "data/out/output.csv", format: "csv" };
+  if (type === "write_json")
+    return { path: "data/out/output.json", mode: "array", pretty: true };
+  if (type === "schema_from_json")
+    return { path: "", source_kind: "auto", pass_rows: true };
   return {};
 }
 
@@ -161,22 +167,58 @@ function toFlow(
   const running = Boolean(opts?.running);
   const run = opts?.run;
   const nodeMetrics = run?.node_metrics || {};
-  const rejected = Number(run?.metrics?.rows_rejected || 0) > 0;
+  const nodeRuns = run?.node_runs || [];
+  const byNode = new Map(
+    nodeRuns
+      .filter((nr) => nr.node_id)
+      .map((nr) => [String(nr.node_id), nr] as const),
+  );
+  const rejected =
+    Number(run?.metrics?.rows_rejected || 0) > 0 ||
+    nodeRuns.some((nr) => Number(nr.rows_rejected || 0) > 0);
   const status = run?.status;
+  const doneIds = new Set(
+    [...byNode.entries()]
+      .filter(([, nr]) => nr.status === "success" || nr.status === "failed")
+      .map(([id]) => id),
+  );
+  const runningIds = new Set(
+    [...byNode.entries()]
+      .filter(([, nr]) => nr.status === "running")
+      .map(([id]) => id),
+  );
 
   const nodes: Node[] = pipeline.nodes.map((n) => {
+    const nr = byNode.get(n.id);
     let runVisual: RunVisual = "idle";
     if (running) {
-      // Only pulse a few spine nodes — animating every node freezes large graphs.
-      runVisual = "running";
+      if (nr?.status === "success") {
+        runVisual =
+          Number(nr.rows_rejected || 0) > 0 &&
+          (n.type === "schema_validate" || n.id === "rejects")
+            ? "reject"
+            : "success";
+      } else if (nr?.status === "failed") {
+        runVisual = "error";
+      } else if (nr?.status === "running" || runningIds.size === 0) {
+        // Before first progress event, pulse all; once ticks arrive, only active.
+        runVisual = runningIds.size === 0 || nr?.status === "running" ? "running" : "idle";
+      } else {
+        runVisual = "idle";
+      }
     } else if (status === "success") {
       runVisual =
         rejected && (n.type === "schema_validate" || n.id === "rejects")
           ? "reject"
           : "success";
     } else if (status === "failed") {
-      runVisual = nodeMetrics[n.id] ? "success" : "error";
+      runVisual = nodeMetrics[n.id] || byNode.has(n.id) ? "success" : "error";
+      if (nr?.status === "failed") runVisual = "error";
+      if (nr?.status === "success") runVisual = "success";
     }
+    const rowsIn = nr?.rows_in;
+    const rowsOut = nr?.rows_out;
+    const rowsRejected = nr?.rows_rejected;
     return {
       id: n.id,
       type: "etl",
@@ -186,18 +228,46 @@ function toFlow(
         componentType: n.type,
         config: n.config || {},
         runVisual,
+        rowsIn: typeof rowsIn === "number" ? rowsIn : undefined,
+        rowsOut: typeof rowsOut === "number" ? rowsOut : undefined,
+        rowsRejected: typeof rowsRejected === "number" ? rowsRejected : undefined,
+        showLiveRows:
+          Boolean(running && nr) ||
+          (!running && Boolean(nr) && (status === "success" || status === "failed")),
       } satisfies EtlNodeData,
     };
   });
-  const edges: Edge[] = pipeline.edges.map((e, idx) => {
+
+  // Prefer flowing edges on the active path (into running / out of recent success).
+  const flowCandidates = pipeline.edges
+    .map((e, idx) => ({ e, idx }))
+    .filter(({ e }) => e.sourceHandle !== "rejects")
+    .filter(({ e }) => {
+      if (!running) return false;
+      if (runningIds.has(e.target) || runningIds.has(e.source)) return true;
+      if (doneIds.has(e.source) && !doneIds.has(e.target)) return true;
+      return false;
+    });
+  const flowingIds = new Set(
+    (flowCandidates.length ? flowCandidates : pipeline.edges.map((e, idx) => ({ e, idx })))
+      .filter(({ e }) => e.sourceHandle !== "rejects")
+      .slice(0, 8)
+      .map(({ e }) => e.id),
+  );
+
+  const edges: Edge[] = pipeline.edges.map((e) => {
     const isReject = e.sourceHandle === "rejects";
-    // Cap CSS flow animations — RF animated + CSS on every edge is expensive at 50+.
-    const flowing = running && idx < 8 && !isReject;
+    const flowing = running && !isReject && flowingIds.has(e.id);
+    const edgeDone =
+      !running && status === "success" && !isReject
+        ? true
+        : running && doneIds.has(e.source) && doneIds.has(e.target) && !isReject;
     const classes = [
       isReject ? "edge-reject" : "edge-success",
       flowing ? "edge-flowing" : "",
-      !flowing && status === "success" && !isReject ? "edge-done" : "",
-      !flowing && isReject && rejected ? "edge-reject-pulse" : "",
+      edgeDone && !flowing ? "edge-done" : "",
+      isReject && rejected ? "edge-reject-pulse" : "",
+      isReject && running ? "edge-reject-live" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -210,7 +280,13 @@ function toFlow(
       animated: false,
       className: classes,
       style: {
-        stroke: isReject ? "#ff8a9b" : flowing || running ? "#0071e3" : "#c7c7cc",
+        stroke: isReject
+          ? "#ff8a9b"
+          : flowing || (running && !edgeDone)
+            ? "#0071e3"
+            : edgeDone
+              ? "#86dba0"
+              : "#c7c7cc",
         strokeWidth: flowing || running ? 2.25 : 1.75,
       },
     };
@@ -410,8 +486,26 @@ function AppCanvas() {
           if (!fresh) return n;
           const d = n.data as EtlNodeData;
           const fd = fresh.data as EtlNodeData;
-          if (d.runVisual === fd.runVisual) return n;
-          return { ...n, data: { ...d, runVisual: fd.runVisual } };
+          if (
+            d.runVisual === fd.runVisual &&
+            d.rowsIn === fd.rowsIn &&
+            d.rowsOut === fd.rowsOut &&
+            d.rowsRejected === fd.rowsRejected &&
+            d.showLiveRows === fd.showLiveRows
+          ) {
+            return n;
+          }
+          return {
+            ...n,
+            data: {
+              ...d,
+              runVisual: fd.runVisual,
+              rowsIn: fd.rowsIn,
+              rowsOut: fd.rowsOut,
+              rowsRejected: fd.rowsRejected,
+              showLiveRows: fd.showLiveRows,
+            },
+          };
         }),
       );
       setEdges((eds) =>
@@ -421,7 +515,7 @@ function AppCanvas() {
           if (
             e.animated === fresh.animated &&
             e.className === fresh.className &&
-            e.style === fresh.style
+            JSON.stringify(e.style) === JSON.stringify(fresh.style)
           ) {
             return e;
           }
@@ -878,15 +972,19 @@ function AppCanvas() {
       await api.updatePipeline(pipeline.id, updated);
       setPipeline(updated);
       const { run_id } = await api.runPipeline(pipeline.id);
-      // Brief flowing animation, then poll until terminal (demo runs sync but stay resilient)
-      await new Promise((r) => setTimeout(r, 450));
+      // Brief flowing animation, then poll until terminal (live node_runs mid-run).
+      await new Promise((r) => setTimeout(r, 200));
       let status = await api.getRun(run_id);
+      setRun(status);
+      applyRunVisuals(true, status);
       const active = (s: string) =>
         s === "pending" || s === "queued" || s === "running" || s === "retrying";
       // Async control plane: POST returns 202 queued; poll until terminal.
-      for (let i = 0; i < 200 && active(status.status); i++) {
-        await new Promise((r) => setTimeout(r, 500));
+      for (let i = 0; i < 400 && active(status.status); i++) {
+        await new Promise((r) => setTimeout(r, 250));
         status = await api.getRun(run_id);
+        setRun(status);
+        applyRunVisuals(true, status);
       }
       setRun(status);
       applyRunVisuals(false, status);

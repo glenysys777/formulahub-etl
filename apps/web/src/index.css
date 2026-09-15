@@ -1525,6 +1525,47 @@ select {
   color: #fff;
 }
 
+.etl-rows-badge {
+  position: absolute;
+  left: 50%;
+  bottom: -11px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #1d1d1f;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.etl-rows-badge.live {
+  border-color: rgba(0, 113, 227, 0.45);
+  color: #0071e3;
+  animation: rows-badge-tick 1.1s ease-in-out infinite;
+}
+.etl-rows-sep {
+  opacity: 0.55;
+  font-weight: 500;
+}
+.etl-rows-rej {
+  color: #ff375f;
+  margin-left: 0.15rem;
+}
+
+@keyframes rows-badge-tick {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-1px); }
+}
+
 /* React Flow overrides */
 .react-flow {
   background: var(--bg-0) !important;
@@ -1579,12 +1620,14 @@ select {
   stroke: #0071e3 !important;
   stroke-width: 2.6 !important;
   stroke-dasharray: 8 5 !important;
-  animation: edge-dash-flow 0.75s linear infinite;
+  animation: edge-dash-flow 0.55s linear infinite;
   opacity: 0.95;
+  filter: drop-shadow(0 0 1px rgba(0, 113, 227, 0.35));
 }
 
 .react-flow__edge.edge-reject.edge-flowing .react-flow__edge-path,
-.react-flow__edge.edge-reject-pulse .react-flow__edge-path {
+.react-flow__edge.edge-reject-pulse .react-flow__edge-path,
+.react-flow__edge.edge-reject-live .react-flow__edge-path {
   stroke: #ff8a9b !important;
   stroke-dasharray: 5 4 !important;
   animation: edge-dash-flow 0.9s linear infinite, edge-reject-glow 1.4s ease-in-out infinite;
