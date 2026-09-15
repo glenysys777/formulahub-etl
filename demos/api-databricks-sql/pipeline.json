@@ -41,6 +41,7 @@
     "demo": true,
     "requires_demo_mode": true,
     "use_case": "api-databricks-sql",
+    "workspace_folder": "Pipelines/Demos",
     "run_params": {
       "run_date": "2026-09-14"
     },

@@ -6,6 +6,7 @@ data/tmp/
 data/bench/
 data/drop/
 data/pipelines/
+data/workspace.json
 pipelines/
 data/schedules/
 data/*.db

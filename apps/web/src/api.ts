@@ -164,6 +164,11 @@ export type HealthInfo = {
   auth?: string;
 };
 
+export type WorkspaceInfo = {
+  folders: string[];
+  pipelineFolders: Record<string, string>;
+};
+
 export const api = {
   health: () => req<HealthInfo>("/health"),
   listComponents: () => req<ComponentInfo[]>("/api/components"),
@@ -175,6 +180,22 @@ export const api = {
     req<Pipeline>(`/api/pipelines/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   importPipeline: (body: Partial<Pipeline>) =>
     req<Pipeline>("/api/pipelines/import", { method: "POST", body: JSON.stringify(body) }),
+  getWorkspace: () => req<WorkspaceInfo>("/api/workspace"),
+  putWorkspace: (body: WorkspaceInfo) =>
+    req<WorkspaceInfo>("/api/workspace", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  movePipelineFolder: (pipeline_id: string, folder: string) =>
+    req<{
+      pipeline_id: string;
+      folder: string;
+      workspace: WorkspaceInfo;
+      pipeline: Pipeline;
+    }>("/api/workspace/move", {
+      method: "POST",
+      body: JSON.stringify({ pipeline_id, folder }),
+    }),
   exportPipeline: async (id: string, format: "json" | "zip" = "json") => {
     const res = await fetch(
       `${API_BASE}/api/pipelines/${id}/export?format=${format}`,

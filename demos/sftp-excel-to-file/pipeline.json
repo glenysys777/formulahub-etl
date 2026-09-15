@@ -81,6 +81,7 @@
     "demo": true,
     "requires_demo_mode": true,
     "use_case": "sftp-excel-to-file",
+    "workspace_folder": "Pipelines/Demos",
     "honesty": "FORMULAETL_DEMO=1 copies fixtures; real SFTP needs host/creds and FORMULAETL_DEMO=0"
   }
 }

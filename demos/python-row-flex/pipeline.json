@@ -86,6 +86,7 @@
     "demo": true,
     "requires_demo_mode": true,
     "use_case": "python-row-flex",
+    "workspace_folder": "Pipelines/Demos",
     "java_to_python_note": true
   }
 }

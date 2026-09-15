@@ -46,6 +46,7 @@
     "demo": true,
     "requires_demo_mode": true,
     "role": "child",
+    "workspace_folder": "Reusable",
     "publish": {
       "stage": "ingest",
       "table": "orders_staging"

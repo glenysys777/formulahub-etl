@@ -5,6 +5,8 @@ Community Studio persists pipelines in two places:
 1. **SQLite control plane** (`data/formulaetl.db` by default) — versions, runs, schedules.
 2. **Mirror JSON files** — `{work_dir}/pipelines/{pipeline_id}.json` written on every create / update / Save.
 
+**Workspace folders** (`metadata.workspace_folder` + `{work_dir}/data/workspace.json`) organize pipelines in the Studio left tree — see `WORKSPACE.md`.
+
 The status bar shows `workspace on this machine · {work_dir}` so you can find the folder on disk.
 
 ## Save from Studio

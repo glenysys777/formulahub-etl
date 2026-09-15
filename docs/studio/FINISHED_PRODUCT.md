@@ -29,13 +29,15 @@ No competitor product names. Studio names only: **Field Mapper**, **Schema Map**
 | Archive Files / Logger | Move inputs; metrics | ALPHA |
 | Scheduler | In-process cron per pipeline | DEMO / ALPHA |
 | **Job Contexts** | Right-rail DEV/QA/PROD key–value + run_params; Studio editor (no JSON) | ALPHA |
-| Studio chrome | Collapsible inspector, type-to-place, status `work_dir`, Save / Export | ALPHA |
+| Studio chrome | Collapsible inspector, type-to-place, status `work_dir`, Save / Export, **Workspace** tree | ALPHA |
 | Project files | Mirror JSON under `{work_dir}/pipelines/`; export JSON/zip | ALPHA |
+| **Workspace** | Left folder tree (`Pipelines/Demos`, My pipelines, Masters, Reusable); `metadata.workspace_folder` + `data/workspace.json` | ALPHA |
 | Desktop shell | Electron: spawn/reuse API + Studio window; Mac `.app` via `dist:mac` / mac-pack | ALPHA |
 
 ## Studio UX (this wave)
 
 - Collapsible right sidebar (persisted) → big canvas workspace
+- **Left Workspace tree**: folders for Pipelines / Masters / Reusable; click opens; New assigns folder — see `WORKSPACE.md`
 - Type on focused canvas → quick-add palette (filter · Enter · Esc)
 - **Main / Lookup** labels only on dual-input **Lookup Join** (single-input Schema Map / Field Mapper stay quiet)
 - Double-click any node → expand inspector (mapper still opens overlay)

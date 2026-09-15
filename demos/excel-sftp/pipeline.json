@@ -65,6 +65,7 @@
   "metadata": {
     "demo": true,
     "requires_demo_mode": true,
-    "use_case": "excel-sftp"
+    "use_case": "excel-sftp",
+    "workspace_folder": "Pipelines/Demos"
   }
 }

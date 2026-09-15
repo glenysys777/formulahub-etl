@@ -54,6 +54,7 @@
     "demo": true,
     "requires_demo_mode": true,
     "use_case": "master-child-run-pipeline",
+    "workspace_folder": "Masters",
     "run_params": {
       "run_date": "2026-09-14",
       "job_name": "master-file-to-databricks"

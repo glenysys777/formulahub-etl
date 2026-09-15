@@ -123,6 +123,7 @@
   "metadata": {
     "demo": true,
     "requires_demo_mode": true,
-    "use_case": "excel-to-file"
+    "use_case": "excel-to-file",
+    "workspace_folder": "Pipelines/Demos"
   }
 }

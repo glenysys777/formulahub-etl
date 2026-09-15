@@ -49,6 +49,16 @@ from formulaetl_api.scheduler import PipelineScheduler, ScheduleStore
 from formulaetl_api.store import ConnectionStore, PipelineStore, RunStore
 from formulaetl_api.validate import run_summary_from_detail, validate_pipeline_definition
 from formulaetl_api.worker import RunWorker
+from formulaetl_api.workspace import (
+    DEFAULT_MY_PIPELINES,
+    apply_demo_workspace_folder,
+    folder_from_metadata,
+    load_workspace,
+    resolve_pipeline_folder,
+    save_workspace,
+    stamp_workspace_folder,
+    sync_workspace_from_pipelines,
+)
 
 WORK_DIR = Path(os.environ.get("FORMULAETL_WORK_DIR", Path(__file__).resolve().parents[2]))
 DEMO_MODE = os.environ.get("FORMULAETL_DEMO", "1") == "1"
@@ -289,6 +299,16 @@ class PipelineValidateBody(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class WorkspaceUpdate(BaseModel):
+    folders: list[str] = Field(default_factory=list)
+    pipelineFolders: dict[str, str] = Field(default_factory=dict)
+
+
+class WorkspaceMove(BaseModel):
+    pipeline_id: str
+    folder: str
+
+
 def _secret_exists(ref: str) -> bool:
     """True if a secret ref resolves — value is discarded (never returned)."""
     try:
@@ -296,6 +316,18 @@ def _secret_exists(ref: str) -> bool:
     except Exception:
         return False
     return val is not None and str(val) != ""
+
+
+def _index_pipeline_folder(pipeline: PipelineDefinition) -> None:
+    """Keep data/workspace.json in sync with metadata.workspace_folder."""
+    folder = folder_from_metadata(pipeline.metadata) or DEFAULT_MY_PIPELINES
+    ws = load_workspace(WORK_DIR)
+    pf = dict(ws.get("pipelineFolders") or {})
+    pf[pipeline.id] = folder
+    folders = list(ws.get("folders") or [])
+    if folder not in folders:
+        folders.append(folder)
+    save_workspace(WORK_DIR, {"folders": folders, "pipelineFolders": pf})
 
 
 def _ensure_demo_loaded(*, refresh: bool = False) -> None:
@@ -315,14 +347,25 @@ def _ensure_demo_loaded(*, refresh: bool = False) -> None:
         ("demos/s3-databricks/pipeline.json", "demo-s3-databricks"),
         ("demos/api-databricks-sql/pipeline.json", "demo-api-databricks-sql"),
         ("demos/lookup-join-mapper/pipeline.json", "demo-lookup-join-mapper"),
+        ("demos/master-file-to-databricks/pipeline.json", "demo-master-file-to-databricks"),
+        ("demos/master-file-to-databricks/child-ingest.json", "demo-master-child-ingest"),
+        ("demos/master-file-to-databricks/child-load.json", "demo-master-child-load"),
     ):
         demo_path = WORK_DIR / rel
         if not demo_path.exists():
             continue
         if not refresh and pipelines.get(pid) is not None:
+            # Still stamp folder if an older install lacks metadata.workspace_folder.
+            existing = pipelines.get(pid)
+            if existing is not None and not folder_from_metadata(existing.metadata):
+                stamped = apply_demo_workspace_folder(pid, existing.metadata)
+                if stamped != (existing.metadata or {}):
+                    existing.metadata = stamped
+                    pipelines.save(existing)
             continue
         data = json.loads(demo_path.read_text(encoding="utf-8"))
         data["id"] = pid
+        data["metadata"] = apply_demo_workspace_folder(pid, data.get("metadata") or {})
         pipelines.save(PipelineDefinition.model_validate(data))
 
 
@@ -391,6 +434,7 @@ def startup() -> None:
     _ensure_demo_loaded(refresh=True)
     # Drop legacy demo id so product UI never lists competitor-named pipelines
     pipelines.delete("demo-talend-core-path")
+    sync_workspace_from_pipelines(WORK_DIR, pipelines.list())
     if os.environ.get("FORMULAETL_SCHEDULER", "1") != "0":
         get_scheduler().start()
     if EMBEDDED_WORKER:
@@ -539,16 +583,20 @@ def list_pipelines() -> list[dict[str, Any]]:
 @app.post("/api/pipelines", status_code=201)
 def create_pipeline(body: PipelineCreate) -> dict[str, Any]:
     pid = body.id or str(uuid.uuid4())
+    meta = dict(body.metadata or {})
+    if not folder_from_metadata(meta):
+        meta = stamp_workspace_folder(meta, DEFAULT_MY_PIPELINES)
     pipeline = PipelineDefinition(
         id=pid,
         name=body.name,
         description=body.description,
         nodes=body.nodes,
         edges=body.edges,
-        metadata=body.metadata,
+        metadata=meta,
     )
     version = pipelines.save(pipeline)
     saved_path = _mirror_pipeline_to_disk(pipeline)
+    _index_pipeline_folder(pipeline)
     out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     out["version"] = str(version.version_num)
@@ -565,6 +613,8 @@ def import_pipeline(body: PipelineImport) -> dict[str, Any]:
         pid = str(uuid.uuid4())
     meta = dict(body.metadata or {})
     meta.setdefault("imported", True)
+    if not folder_from_metadata(meta):
+        meta = stamp_workspace_folder(meta, DEFAULT_MY_PIPELINES)
     pipeline = PipelineDefinition(
         id=pid,
         name=body.name,
@@ -575,6 +625,7 @@ def import_pipeline(body: PipelineImport) -> dict[str, Any]:
     )
     version = pipelines.save(pipeline)
     saved_path = _mirror_pipeline_to_disk(pipeline)
+    _index_pipeline_folder(pipeline)
     out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     out["version"] = str(version.version_num)
@@ -601,21 +652,76 @@ def get_pipeline(pipeline_id: str) -> dict[str, Any]:
 
 @app.put("/api/pipelines/{pipeline_id}")
 def update_pipeline(pipeline_id: str, body: PipelineCreate) -> dict[str, Any]:
+    existing = pipelines.get(pipeline_id)
+    meta = dict(body.metadata or {})
+    # Preserve folder assignment across Save when client omits it.
+    if not folder_from_metadata(meta) and existing is not None:
+        prev = folder_from_metadata(existing.metadata)
+        if prev:
+            meta = stamp_workspace_folder(meta, prev)
+        else:
+            ws = load_workspace(WORK_DIR)
+            meta = stamp_workspace_folder(
+                meta,
+                resolve_pipeline_folder(pipeline_id, existing.metadata, ws),
+            )
+    elif not folder_from_metadata(meta):
+        meta = stamp_workspace_folder(meta, DEFAULT_MY_PIPELINES)
     pipeline = PipelineDefinition(
         id=pipeline_id,
         name=body.name,
         description=body.description,
         nodes=body.nodes,
         edges=body.edges,
-        metadata=body.metadata,
+        metadata=meta,
     )
     version = pipelines.save(pipeline)
     saved_path = _mirror_pipeline_to_disk(pipeline)
+    _index_pipeline_folder(pipeline)
     out = _mask_pipeline_dict(pipeline.model_dump())
     out["pipeline_version_id"] = version.id
     out["version"] = str(version.version_num)
     out["saved_path"] = saved_path
     return out
+
+
+# ── Workspace (Studio folder tree) ───────────────────────────────────────────
+
+
+@app.get("/api/workspace")
+def get_workspace() -> dict[str, Any]:
+    """Folder list + pipeline→folder map for the Studio Workspace tree."""
+    _ensure_demo_loaded()
+    return sync_workspace_from_pipelines(WORK_DIR, pipelines.list())
+
+
+@app.put("/api/workspace")
+def put_workspace(body: WorkspaceUpdate) -> dict[str, Any]:
+    """Replace workspace folder list / index (does not rewrite pipeline metadata)."""
+    return save_workspace(
+        WORK_DIR,
+        {"folders": body.folders, "pipelineFolders": body.pipelineFolders},
+    )
+
+
+@app.post("/api/workspace/move")
+def move_pipeline_folder(body: WorkspaceMove) -> dict[str, Any]:
+    """Assign a pipeline to a Workspace folder (updates metadata + index)."""
+    _ensure_demo_loaded()
+    p = pipelines.get(body.pipeline_id)
+    if not p:
+        raise HTTPException(404, f"Pipeline '{body.pipeline_id}' not found")
+    p.metadata = stamp_workspace_folder(p.metadata, body.folder)
+    pipelines.save(p)
+    _mirror_pipeline_to_disk(p)
+    _index_pipeline_folder(p)
+    ws = sync_workspace_from_pipelines(WORK_DIR, pipelines.list())
+    return {
+        "pipeline_id": p.id,
+        "folder": folder_from_metadata(p.metadata),
+        "workspace": ws,
+        "pipeline": _mask_pipeline_dict(p.model_dump()),
+    }
 
 
 @app.get("/api/pipelines/{pipeline_id}/export")
