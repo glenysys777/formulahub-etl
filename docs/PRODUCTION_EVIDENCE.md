@@ -72,6 +72,8 @@ CI never sets `RUN_LIVE_WEDGE`. Green Actions ≠ LIVE_CLOUD PROVEN. C7/C8 are m
 | D8–D9 | SFTP host-key reject / S3 pagination | PROVEN | Phase C | `dce51a6` | 2026-09-14 |
 | D10–D12 | Async 202 / concurrent workers / version pin | PROVEN | Phase D+E | `1b82aa5` | 2026-09-14 |
 | D13 | GET run exposes summary + node_runs + events | PROVEN | Phase G `get_run` + tests | `5525b26` | 2026-09-14 |
+| D14 | Mid-run `node_runs` progress + Studio live rows Soft-PASS | **PROVEN Soft-PASS DEMO** | Worker `upsert_node_progress` + poll; `tests/api/test_live_progress_json.py` | this PR — replace with merge SHA | 2026-09-15 |
+| D15 | Write JSON + Schema from JSON Soft-PASS | **PROVEN Soft-PASS DEMO** | Palette + `demos/api-json-write`; unit/API tests | this PR — replace with merge SHA | 2026-09-15 |
 
 ---
 

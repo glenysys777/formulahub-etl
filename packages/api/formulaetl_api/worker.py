@@ -182,6 +182,33 @@ class RunWorker:
                 )
                 self.runs.complete_from_result(result, version_id)
 
+            def on_node_progress(
+                *,
+                node_id: str,
+                component_type: str,
+                status: str,
+                rows_in: int = 0,
+                rows_out: int = 0,
+                rows_rejected: int = 0,
+                duration_ms: float = 0.0,
+                error: str | None = None,
+                extras: dict | None = None,
+                message: str | None = None,
+            ) -> None:
+                self.runs.upsert_node_progress(
+                    run_id,
+                    node_id=node_id,
+                    component_type=component_type,
+                    status=status,
+                    rows_in=rows_in,
+                    rows_out=rows_out,
+                    rows_rejected=rows_rejected,
+                    duration_ms=duration_ms,
+                    error=error,
+                    extras=extras,
+                    event_message=message,
+                )
+
             runner = PipelineRunner(
                 work_dir=self.work_dir,
                 demo_mode=self.demo_mode,
@@ -194,6 +221,7 @@ class RunWorker:
                 get_pipeline=get_pipeline,
                 record_child_run=record_child_run,
                 complete_child_run=complete_child_run,
+                on_node_progress=on_node_progress,
             )
             # Ensure status reflects runner outcome
             if result.status == STATUS_RUNNING:

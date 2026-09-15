@@ -27,6 +27,8 @@ let quitting = false;
 let studioUrl = null;
 /** Prevent repeated auto-restarts in one session after a single recovery. */
 let apiAutoRestartUsed = false;
+/** Consecutive failed health probes before replacing Studio with splash. */
+let healthFailStreak = 0;
 /** @type {ReturnType<typeof setInterval> | null} */
 let healthTimer = null;
 let restartingApi = false;
@@ -196,12 +198,20 @@ async function onHealthTick() {
   }
   const health = await fetchHealth(DEFAULT_API_PORT);
   if (health && health.status === "ok") {
+    healthFailStreak = 0;
+    return;
+  }
+  // Tolerate a single blip — do not rip the canvas out for a transient probe miss.
+  healthFailStreak += 1;
+  if (healthFailStreak < 2) {
+    log.info("[desktop] API health blip (waiting for confirm)");
     return;
   }
   // API gone — auto-restart once, then show reconnect message.
   log.info("[desktop] API health lost");
   if (!apiAutoRestartUsed) {
     apiAutoRestartUsed = true;
+    healthFailStreak = 0;
     await restartApi({ reason: "auto-reconnect" });
     return;
   }

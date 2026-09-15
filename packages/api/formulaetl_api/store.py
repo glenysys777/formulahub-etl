@@ -818,6 +818,99 @@ class RunStore:
             ),
         )
 
+    def upsert_node_progress(
+        self,
+        run_id: str,
+        *,
+        node_id: str,
+        component_type: str,
+        status: str,
+        rows_in: int = 0,
+        rows_out: int = 0,
+        rows_rejected: int = 0,
+        duration_ms: float = 0.0,
+        error: str | None = None,
+        extras: dict[str, Any] | None = None,
+        event_message: str | None = None,
+    ) -> None:
+        """Persist mid-run node progress so Studio can poll live rows in/out."""
+        self.ensure()
+        now = _now()
+        extras = dict(extras or {})
+        nr_id = f"{run_id}:{node_id}"
+        with self._lock:
+            row = self.db.execute(
+                "SELECT started_at, node_metrics_json FROM runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return
+            finished = (
+                None
+                if status == STATUS_RUNNING
+                else now
+            )
+            self.db.execute(
+                "INSERT INTO node_runs(id, run_id, node_id, component_type, status, "
+                "started_at, finished_at, rows_in, rows_out, rows_rejected, error, "
+                "duration_ms, extras_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(run_id, node_id) DO UPDATE SET "
+                "component_type=excluded.component_type, status=excluded.status, "
+                "started_at=COALESCE(node_runs.started_at, excluded.started_at), "
+                "finished_at=excluded.finished_at, "
+                "rows_in=excluded.rows_in, rows_out=excluded.rows_out, "
+                "rows_rejected=excluded.rows_rejected, error=excluded.error, "
+                "duration_ms=excluded.duration_ms, extras_json=excluded.extras_json",
+                (
+                    nr_id,
+                    run_id,
+                    node_id,
+                    str(component_type),
+                    status,
+                    now,
+                    finished,
+                    int(rows_in),
+                    int(rows_out),
+                    int(rows_rejected),
+                    error,
+                    float(duration_ms or 0.0),
+                    json.dumps(extras, default=str),
+                ),
+            )
+            # Keep node_metrics_json in sync for clients that still read it.
+            metrics = json.loads(row["node_metrics_json"] or "{}")
+            if not isinstance(metrics, dict):
+                metrics = {}
+            metrics[node_id] = {
+                "rows_in": int(rows_in),
+                "rows_out": int(rows_out),
+                "rows_rejected": int(rows_rejected),
+                "duration_ms": float(duration_ms or 0.0),
+                "component_type": str(component_type),
+                "status": status,
+                **{k: v for k, v in extras.items() if k not in {"component_type", "status"}},
+            }
+            self.db.execute(
+                "UPDATE runs SET node_metrics_json=?, updated_at=? WHERE run_id=?",
+                (json.dumps(metrics, default=str), now, run_id),
+            )
+            if event_message:
+                self._insert_event(
+                    run_id,
+                    now,
+                    "node_progress",
+                    from_status=None,
+                    to_status=status,
+                    message=event_message,
+                    payload={
+                        "node_id": node_id,
+                        "component_type": component_type,
+                        "rows_in": int(rows_in),
+                        "rows_out": int(rows_out),
+                        "rows_rejected": int(rows_rejected),
+                    },
+                )
+
     def _upsert_node_runs(self, result: RunResult, *, started_at: float | None) -> None:
         base_t = started_at or _now()
         cursor_t = base_t

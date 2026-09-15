@@ -15,6 +15,7 @@ from formulaetl.components.csv_parser import CSVParser
 from formulaetl.components.json_parser import JSONParser
 from formulaetl.components.xml_parser import XMLParser
 from formulaetl.components.schema_validate import SchemaValidate
+from formulaetl.components.schema_from_json import SchemaFromJSON
 from formulaetl.components.column_map import ColumnMap
 from formulaetl.components.transform import Transform
 from formulaetl.components.tmap import TMap
@@ -25,6 +26,7 @@ from formulaetl.components.python_row import PythonRow
 from formulaetl.components.dedupe import Dedupe
 from formulaetl.components.lookup_join import LookupJoin
 from formulaetl.components.dest_file import LocalFileDestination
+from formulaetl.components.write_json import WriteJSON
 from formulaetl.components.excel_destination import ExcelDestination
 from formulaetl.components.sqlite_destination import SQLiteDestination
 from formulaetl.components.sftp_destination import SFTPDestination
@@ -53,6 +55,7 @@ __all__ = [
     "JSONParser",
     "XMLParser",
     "SchemaValidate",
+    "SchemaFromJSON",
     "ColumnMap",
     "Transform",
     "TMap",
@@ -63,6 +66,7 @@ __all__ = [
     "Dedupe",
     "LookupJoin",
     "LocalFileDestination",
+    "WriteJSON",
     "ExcelDestination",
     "SQLiteDestination",
     "SFTPDestination",

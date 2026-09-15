@@ -305,6 +305,7 @@ def _ensure_demo_loaded(*, refresh: bool = False) -> None:
     for rel, pid in (
         ("demos/s3-pgp-snowflake/pipeline.json", "demo-s3-pgp-snowflake"),
         ("demos/api-map-transform/pipeline.json", "demo-api-map-transform"),
+        ("demos/api-json-write/pipeline.json", "demo-api-json-write"),
         ("demos/excel-to-file/pipeline.json", "demo-excel-to-file"),
         ("demos/sftp-excel-to-file/pipeline.json", "demo-sftp-excel-to-file"),
         ("demos/excel-sftp/pipeline.json", "demo-excel-sftp"),

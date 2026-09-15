@@ -43,8 +43,10 @@ const CATEGORY: Record<string, string> = {
   lookup_join: "transform",
 
   schema_validate: "quality",
+  schema_from_json: "quality",
 
   sftp_destination: "destination",
+  write_json: "destination",
 
   logger_metrics: "utility",
 };
@@ -195,6 +197,22 @@ export function ComponentGlyph({
       </svg>
     );
   }
+  if (type === "schema_from_json") {
+    return (
+      <svg {...common}>
+        <path d="M4 2.5h5.5L12 5v8.5H4V2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M9.5 2.5V5H12M6 8h4M6 10.5h2.5M6 13h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (type === "write_json") {
+    return (
+      <svg {...common}>
+        <path d="M4 2.5h5.5L12 5v8.5H4V2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M9.5 2.5V5H12M6.2 9.2c.6-1.2 1.6-1.2 2.2 0 .6 1.2 1.6 1.2 2.2 0M6.2 12c.6-1.2 1.6-1.2 2.2 0 .6 1.2 1.6 1.2 2.2 0" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+      </svg>
+    );
+  }
   // Transform arrows
   if (
     type === "tmap" ||
@@ -295,6 +313,12 @@ function summary(type: string, config: Record<string, unknown>): string {
   if (type === "mysql_source") return String(config.query || config.host || "MySQL");
   if (type === "mysql_destination") return String(config.table || "MySQL");
   if (type === "json_parser") return String(config.json_path || config.path || "JSON → rows");
+  if (type === "schema_from_json")
+    return String(config.path || (config.content ? "inline schema" : "target schema"));
+  if (type === "write_json") {
+    const mode = String(config.mode || "array");
+    return `${config.path || "out.json"} · ${mode}`;
+  }
   if (type === "xml_parser")
     return String(config.record_tag || config.xpath || config.path || "XML → rows");
   if (type === "dedupe") {
@@ -366,6 +390,10 @@ export type EtlNodeData = {
   componentType: string;
   config: Record<string, unknown>;
   runVisual?: RunVisual;
+  rowsIn?: number;
+  rowsOut?: number;
+  rowsRejected?: number;
+  showLiveRows?: boolean;
 };
 
 const HANDLE_COLORS: Record<string, string> = { ...CAT_COLORS };
@@ -381,6 +409,8 @@ function friendlyLabel(type: string, label: string): string {
   if (type === "databricks_job") return label || "Databricks Job";
   if (type === "databricks_sql") return label || "Databricks SQL";
   if (type === "run_pipeline") return label || "Run Pipeline";
+  if (type === "write_json") return label || "Write JSON";
+  if (type === "schema_from_json") return label || "Schema from JSON";
   return label || type;
 }
 
@@ -436,6 +466,25 @@ export const EtlNode = memo(function EtlNode({ id, data, selected }: NodeProps) 
           ↺
         </span>
       )}
+      {d.showLiveRows &&
+        (typeof d.rowsIn === "number" || typeof d.rowsOut === "number") && (
+          <span
+            className={`etl-rows-badge${runVisual === "running" ? " live" : ""}`}
+            data-testid="etl-rows-badge"
+            title={
+              Number(d.rowsRejected || 0) > 0
+                ? `in ${d.rowsIn ?? 0} → out ${d.rowsOut ?? 0} · rejected ${d.rowsRejected}`
+                : `in ${d.rowsIn ?? 0} → out ${d.rowsOut ?? 0}`
+            }
+          >
+            <span className="etl-rows-in">{d.rowsIn ?? "—"}</span>
+            <span className="etl-rows-sep">→</span>
+            <span className="etl-rows-out">{d.rowsOut ?? "—"}</span>
+            {Number(d.rowsRejected || 0) > 0 ? (
+              <span className="etl-rows-rej">✗{d.rowsRejected}</span>
+            ) : null}
+          </span>
+        )}
       {isLookup ? (
         <>
           <Handle

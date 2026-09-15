@@ -1,0 +1,113 @@
+{
+  "id": "demo-api-json-write",
+  "name": "API → Map → Schema from JSON → Write JSON",
+  "description": "Pull JSON orders from HTTP API (demo fixture), rename fields with Schema Map, load target structure via Schema from JSON, validate, write nested JSON array locally.",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "api",
+      "type": "http_api_source",
+      "label": "HTTP API Source",
+      "config": {
+        "url": "https://api.example.com/v1/orders",
+        "method": "GET",
+        "json_path": "data.items",
+        "timeout_sec": 30,
+        "demo": true
+      },
+      "position": { "x": 40, "y": 160 }
+    },
+    {
+      "id": "map",
+      "type": "column_map",
+      "label": "Schema Map",
+      "config": {
+        "mappings": [
+          "orderId:order_id",
+          "customerId:customer_id",
+          "customerName:customer_name",
+          "productSku:product_sku",
+          "qty:quantity",
+          "amt:amount",
+          "order_date:order_date",
+          "status:status",
+          "currency:currency",
+          "channel:channel",
+          "email:email"
+        ],
+        "drop_unmapped": false
+      },
+      "position": { "x": 260, "y": 160 }
+    },
+    {
+      "id": "schema",
+      "type": "schema_from_json",
+      "label": "Schema from JSON",
+      "config": {
+        "path": "fixtures/sample/orders_target_sample.json",
+        "source_kind": "sample",
+        "pass_rows": true
+      },
+      "position": { "x": 480, "y": 160 }
+    },
+    {
+      "id": "validate",
+      "type": "schema_validate",
+      "label": "Schema Validate",
+      "config": {
+        "columns": {
+          "order_id": "int",
+          "customer_id": "int",
+          "customer_name": "string",
+          "email": "email",
+          "product_sku": "string",
+          "quantity": "int",
+          "amount": "float",
+          "order_date": "string",
+          "status": "string",
+          "currency": "string",
+          "channel": "string"
+        },
+        "required_columns": [
+          "order_id",
+          "customer_id",
+          "customer_name",
+          "product_sku",
+          "quantity",
+          "amount"
+        ],
+        "strict": false
+      },
+      "position": { "x": 700, "y": 120 }
+    },
+    {
+      "id": "rejects",
+      "type": "local_file_destination",
+      "label": "Rejects File",
+      "config": {
+        "path": "data/rejects/api_json_write_rejects.csv",
+        "format": "csv"
+      },
+      "position": { "x": 700, "y": 300 }
+    },
+    {
+      "id": "dest",
+      "type": "write_json",
+      "label": "Write JSON",
+      "config": {
+        "path": "data/out/api_orders.json",
+        "mode": "array",
+        "pretty": true,
+        "nest": "order=order_id,order_date,status\ncustomer=customer_id,customer_name,email"
+      },
+      "position": { "x": 920, "y": 120 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "api", "target": "map" },
+    { "id": "e2", "source": "map", "target": "schema" },
+    { "id": "e3", "source": "schema", "target": "validate" },
+    { "id": "e4", "source": "validate", "target": "dest", "sourceHandle": "out" },
+    { "id": "e5", "source": "validate", "target": "rejects", "sourceHandle": "rejects" }
+  ]
+}

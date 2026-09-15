@@ -52,6 +52,8 @@ def test_components_endpoint_has_palette_essentials(client: TestClient):
         "databricks_sql",
         "run_pipeline",
         "local_file_destination",
+        "write_json",
+        "schema_from_json",
     ):
         assert required in by_type, f"missing palette component {required}"
 
@@ -61,6 +63,8 @@ def test_components_endpoint_has_palette_essentials(client: TestClient):
         assert "parameters" in c
         name = (c["display_name"] or "").lower()
         assert "talend" not in name
+        # UI / palette must stay on FormulaHub names only
+        assert "tmap" not in name or c["type"] == "tmap"
 
     assert by_type["kafka_source"]["display_name"] == "Kafka Source"
     assert by_type["databricks_job"]["display_name"] == "Databricks Job"
@@ -70,6 +74,10 @@ def test_components_endpoint_has_palette_essentials(client: TestClient):
     assert "talend" not in (by_type["run_pipeline"]["display_name"] or "").lower()
     assert by_type["tmap"]["display_name"] == "Field Mapper"
     assert by_type["s3_source"]["display_name"] == "S3 Source"
+    assert by_type["write_json"]["display_name"] == "Write JSON"
+    assert by_type["schema_from_json"]["display_name"] == "Schema from JSON"
+    assert by_type["schema_from_json"]["category"] == "quality"
+    assert by_type["write_json"]["category"] == "destination"
 
 
 def test_create_blank_pipeline_for_palette_path(client: TestClient):

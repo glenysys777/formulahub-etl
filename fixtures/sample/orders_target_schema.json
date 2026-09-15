@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "order": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "date": { "type": "string", "format": "date" },
+        "status": { "type": "string" }
+      }
+    },
+    "customer": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" }
+      }
+    },
+    "product_sku": { "type": "string" },
+    "quantity": { "type": "integer" },
+    "amount": { "type": "number" },
+    "currency": { "type": "string" },
+    "channel": { "type": "string" }
+  },
+  "required": ["order", "customer", "product_sku", "quantity", "amount"]
+}

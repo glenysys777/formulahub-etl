@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any, Callable
 
@@ -123,6 +124,12 @@ class SchemaValidate(BaseComponent):
             spec = getattr(self, "_compiled", None)
             if spec is None:
                 columns: dict[str, str] = self.config.get("columns", {})
+                if isinstance(columns, str):
+                    columns = json.loads(columns) if columns.strip() else {}
+                if not columns:
+                    upstream = ctx.variables.get("target_schema")
+                    if isinstance(upstream, dict) and upstream:
+                        columns = {str(k): str(v) for k, v in upstream.items()}
                 required = set(self.config.get("required_columns") or list(columns.keys()))
                 strict = bool(self.config.get("strict", False))
                 checks: list[tuple[str, str, Any]] = []
